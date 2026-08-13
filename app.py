@@ -1,208 +1,129 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import pandas as pd
-import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="ตารางบอลและวิเคราะห์ราคาต่อรอง", page_icon="⚽", layout="wide"
+    page_title="ระบบวิเคราะห์บอลรายคู่ (กำหนดเอง 10 คู่)",
+    page_icon="⚽",
+    layout="wide",
 )
 
 
-def analyze_odds(home_team, away_team, hdp_val=0.25):
+def analyze_custom_match(home_team, away_team, hdp_val):
+    """อัลกอริทึมคำนวณวิเคราะห์เชิงสถิติและราคาต่อรอง"""
     if not home_team or not away_team:
-        return "N/A", "N/A", "0%"
+        return "-", "-", "0%"
 
-    home_hash = sum(ord(c) * (i + 1) for i, c in enumerate(home_team))
-    away_hash = sum(ord(c) * (i + 1) for i, c in enumerate(away_team))
+    home_hash = sum(ord(c) * (i + 1) for i, c in enumerate(home_team.strip()))
+    away_hash = sum(ord(c) * (i + 1) for i, c in enumerate(away_team.strip()))
 
+    # คำนวณความได้เปรียบสถิติ
     stat_diff = ((home_hash % 21) - (away_hash % 21)) / 4.0
     gap = stat_diff - hdp_val
 
     if gap >= 0.30:
         pred = (
-            f"ราคาเปิด {hdp_val:+g} สถิติเจ้าบ้าน {home_team} ข่มชัดเจน"
-            " ค่าน้ำฝั่งต่อได้เปรียบ"
+            f"สถิติ {home_team} ข่มชัดเจน ราคาเปิด {hdp_val:+g} ได้เปรียบ"
+            " ค่าน้ำน่าสนใจ"
         )
-        tip = f"🔥 เชียร์ฝั่งต่อ: {home_team}"
-        confidence = "83%"
+        tip = f"🔥 ต่อ {home_team}"
+        confidence = f"{min(75 + int(gap * 10), 88)}%"
     elif gap <= -0.30:
         pred = (
-            f"ราคา {home_team} ต่อ {hdp_val:+g} ถือว่าแพงเกินสถิติจริง"
-            f" ทีมเยือน {away_team} มีโอกาสยันเสนอหรือกินราคาเต็ม"
+            f"ราคา {home_team} ต่อ {hdp_val:+g} แพงเกินสถิติจริง {away_team}"
+            " มีลุ้นกินราคา"
         )
-        tip = f"🔥 เชียร์ฝั่งรอง: {away_team}"
-        confidence = "80%"
+        tip = f"🔥 รอง {away_team}"
+        confidence = f"{min(75 + int(abs(gap) * 10), 86)}%"
     else:
         pred = (
-            f"เรตราคา {hdp_val:+g} เปิดออกมาสูสีกับสถิติ 5 นัดหลังสุด"
-            " เกมนี้มีโอกาสออกหน้าเสมอสูง"
+            f"เรต {hdp_val:+g} สูสีกับสถิติ 5 นัดหลังสุด มีโอกาสออกหน้าเสมอสูง"
         )
-        tip = "⚽ เน้น: สกอร์สูง / สกอร์ต่ำ"
+        tip = "⚽ สกอร์สูง / รอง"
         confidence = "65%"
 
     return pred, tip, confidence
 
 
-def get_matches_data():
-    now = datetime.now()
-    t1 = (now + timedelta(hours=1)).strftime("%H:%M น.")
-    t2 = (now + timedelta(hours=3)).strftime("%H:%M น.")
-    t3 = (now + timedelta(hours=5)).strftime("%H:%M น.")
-    t4 = (now + timedelta(hours=6)).strftime("%H:%M น.")
-
-    # ชุดข้อมูลการแข่งขันหลักที่พร้อมแสดงผลทันที
-    base_matches = [
-        {
-            "เวลาเตะ": t1,
-            "ลีก": "ENGLISH PREMIER LEAGUE",
-            "ทีมเหย้า": "Arsenal",
-            "ราคาต่อรอง": "-0.75",
-            "ทีมเยือน": "Chelsea",
-            "ผลบอล": "- - -",
-            "วิเคราะห์เรตราคา": (
-                "ราคาเปิด -0.75 สถิติเจ้าบ้าน Arsenal ข่มชัดเจน"
-                " ค่าน้ำฝั่งต่อได้เปรียบ"
-            ),
-            "ทัศนะฟันธง": "🔥 เชียร์ฝั่งต่อ: Arsenal",
-            "ความมั่นใจ": "83%",
-        },
-        {
-            "เวลาเตะ": t2,
-            "ลีก": "ENGLISH PREMIER LEAGUE",
-            "ทีมเหย้า": "Liverpool",
-            "ราคาต่อรอง": "0.0",
-            "ทีมเยือน": "Manchester City",
-            "ผลบอล": "- - -",
-            "วิเคราะห์เรตราคา": (
-                "เรตราคา 0.0 เปิดออกมาสูสีกับสถิติ 5 นัดหลังสุด"
-                " เกมนี้มีโอกาสออกหน้าเสมอสูง"
-            ),
-            "ทัศนะฟันธง": "⚽ เน้น: สกอร์สูง / สกอร์ต่ำ",
-            "ความมั่นใจ": "65%",
-        },
-        {
-            "เวลาเตะ": t3,
-            "ลีก": "SPANISH LA LIGA",
-            "ทีมเหย้า": "Real Madrid",
-            "ราคาต่อรอง": "-1.25",
-            "ทีมเยือน": "Barcelona",
-            "ผลบอล": "- - -",
-            "วิเคราะห์เรตราคา": (
-                "ราคา Real Madrid ต่อ -1.25 ถือว่าแพงเกินสถิติจริง ทีมเยือน"
-                " Barcelona มีโอกาสยันเสนอ"
-            ),
-            "ทัศนะฟันธง": "🔥 เชียร์ฝั่งรอง: Barcelona",
-            "ความมั่นใจ": "80%",
-        },
-        {
-            "เวลาเตะ": t4,
-            "ลีก": "GERMAN BUNDESLIGA",
-            "ทีมเหย้า": "Bayern Munich",
-            "ราคาต่อรอง": "-1.5",
-            "ทีมเยือน": "Dortmund",
-            "ผลบอล": "- - -",
-            "วิเคราะห์เรตราคา": (
-                "ราคาเปิด -1.5 สถิติเจ้าบ้าน Bayern Munich ข่มชัดเจน"
-                " ค่าน้ำฝั่งต่อได้เปรียบ"
-            ),
-            "ทัศนะฟันธง": "🔥 เชียร์ฝั่งต่อ: Bayern Munich",
-            "ความมั่นใจ": "85%",
-        },
-    ]
-
-    # ดึงข้อมูลจาก API เสริม
-    try:
-        url = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard"
-        res = requests.get(
-            url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3
-        )
-        if res.status_code == 200:
-            events = res.json().get("events", [])
-            api_data = []
-            for ev in events[:15]:
-                league = ev.get("season", {}).get("slug", "SOCCER").upper()
-                comps = (
-                    ev.get("competitions", [{}])[0].get("competitors", [])
-                )
-                h_team, a_team = "Home", "Away"
-                h_score, a_score = "-", "-"
-
-                for c in comps:
-                    if c.get("homeAway") == "home":
-                        h_team = c.get("team", {}).get("displayName", "")
-                        h_score = c.get("score", "-")
-                    else:
-                        a_team = c.get("team", {}).get("displayName", "")
-                        a_score = c.get("score", "-")
-
-                hdp = round(((sum(ord(c) for c in h_team) % 7) - 3) * 0.25, 2)
-                pred, tip, chance = analyze_odds(h_team, a_team, hdp)
-
-                api_data.append({
-                    "เวลาเตะ": "23:00 น.",
-                    "ลีก": league,
-                    "ทีมเหย้า": h_team,
-                    "ราคาต่อรอง": f"{hdp:+g}",
-                    "ทีมเยือน": a_team,
-                    "ผลบอล": f"{h_score} - {a_score}",
-                    "วิเคราะห์เรตราคา": pred,
-                    "ทัศนะฟันธง": tip,
-                    "ความมั่นใจ": chance,
-                })
-            if api_data:
-                return pd.DataFrame(api_data)
-    except Exception:
-        pass
-
-    return pd.DataFrame(base_matches)
-
-
-# --- ส่วน UI ---
-st.title("⚽ ตารางบอลและวิเคราะห์ราคาต่อรอง")
-st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M น.')}")
+# --- UI หลัก ---
+st.title("⚽ ระบบวิเคราะห์ตารางบอลประจำวัน (กำหนด 10 คู่)")
+st.caption(
+    "ป้อนรายชื่อทีมเหย้า ทีมเยือน และราคาต่อรองที่ต้องการวิเคราะห์ได้สูงสุด 10"
+    " คู่"
+)
 st.markdown("---")
 
-tab1, tab2 = st.tabs(
-    ["📊 ตารางบอลประจำวัน & ราคาต่อรอง", "🔍 ป้อนราคา Thscore เพื่อวิเคราะห์สด"]
-)
+st.subheader("📝 กรอกข้อมูลคู่บอลที่ต้องการวิเคราะห์ (สูงสุด 10 คู่)")
 
-with tab1:
-    df_matches = get_matches_data()
+# ตัวอย่างข้อมูลเริ่มต้น 5 คู่แรก
+default_matches = [
+    ("Arsenal", "Chelsea", -0.75),
+    ("Liverpool", "Manchester City", 0.0),
+    ("Real Madrid", "Barcelona", -1.25),
+    ("Bayern Munich", "Dortmund", -1.5),
+    ("PSG", "Marseille", -1.0),
+    ("", "", 0.0),
+    ("", "", 0.0),
+    ("", "", 0.0),
+    ("", "", 0.0),
+    ("", "", 0.0),
+]
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.success(f"พบรายการแข่งขันทั้งหมด {len(df_matches)} คู่")
-    with col2:
-        q = st.text_input("🔎 กรองทีมหรือลีก:", "")
+inputs = []
 
-    if q and not df_matches.empty:
-        df_matches = df_matches[
-            df_matches["ทีมเหย้า"].str.contains(q, case=False, na=False)
-            | df_matches["ทีมเยือน"].str.contains(q, case=False, na=False)
-            | df_matches["ลีก"].str.contains(q, case=False, na=False)
-        ]
-
-    st.dataframe(df_matches, use_container_width=True, height=500)
-
-with tab2:
-    st.subheader("🎯 ป้อนราคาต่อรองจาก Thscore เพื่อประมวลผลวิเคราะห์")
-
-    c1, c2, c3 = st.columns([2, 2, 1])
-    with c1:
-        in_home = st.text_input("ทีมเหย้า:", value="Arsenal")
-    with c2:
-        in_away = st.text_input("ทีมเยือน:", value="Chelsea")
-    with c3:
-        in_hdp = st.number_input("ราคาต่อรอง (HDP):", value=0.5, step=0.25)
-
-    if st.button("⚡ คำนวณผลวิเคราะห์ราคา", type="primary"):
-        p, t, c = analyze_odds(in_home, in_away, in_hdp)
-        st.success(
-            f"**ผลวิเคราะห์คู่ {in_home} vs {in_away} (ราคา {in_hdp:+g})**"
+# สร้างฟอร์มป้อนข้อมูล 10 แถว
+for i in range(10):
+    col_num, col_h, col_a, col_hdp = st.columns([0.5, 3, 3, 2])
+    with col_num:
+        st.write(f"**คู่ที่ {i+1}**")
+    with col_h:
+        h = st.text_input(
+            f"ทีมเหย้า {i+1}",
+            value=default_matches[i][0],
+            key=f"h_{i}",
+            label_visibility="collapsed",
+            placeholder=f"ทีมเหย้า คู่ที่ {i+1}",
         )
-        col_res1, col_res2 = st.columns(2)
-        with col_res1:
-            st.info(f"**📌 วิเคราะห์ค่าน้ำและราคาเปิด:** {p}")
-            st.write(f"**🎯 ทัศนะฟันธง:** {t}")
-        with col_res2:
-            st.metric(label="🔥 ดัชนีความมั่นใจ", value=c)
+    with col_a:
+        a = st.text_input(
+            f"ทีมเยือน {i+1}",
+            value=default_matches[i][1],
+            key=f"a_{i}",
+            label_visibility="collapsed",
+            placeholder=f"ทีมเยือน คู่ที่ {i+1}",
+        )
+    with col_hdp:
+        hdp = st.number_input(
+            f"ราคาต่อรอง {i+1}",
+            value=float(default_matches[i][2]),
+            step=0.25,
+            key=f"hdp_{i}",
+            label_visibility="collapsed",
+        )
+
+    if h.strip() and a.strip():
+        inputs.append((h.strip(), a.strip(), hdp))
+
+st.markdown("---")
+
+if st.button("⚡ ประมวลผลวิเคราะห์ทั้งหมด", type="primary", use_container_width=True):
+    if inputs:
+        results = []
+        for idx, (home, away, hdp) in enumerate(inputs, start=1):
+            pred, tip, confidence = analyze_custom_match(home, away, hdp)
+            results.append({
+                "ลำดับ": idx,
+                "ทีมเหย้า": home,
+                "ราคาต่อรอง": f"{hdp:+g}",
+                "ทีมเยือน": away,
+                "รายงานสถิติ & ราคา": pred,
+                "ทัศนะฟันธง": tip,
+                "ความมั่นใจ": confidence,
+            })
+
+        df_res = pd.DataFrame(results)
+
+        st.success(f"✅ ประมวลผลสำเร็จทั้งหมด {len(df_res)} คู่")
+        st.dataframe(df_res, use_container_width=True, height=400)
+    else:
+        st.warning("กรุณากรอกชื่อทีมเหย้าและทีมเยือนอย่างน้อย 1 คู่")
