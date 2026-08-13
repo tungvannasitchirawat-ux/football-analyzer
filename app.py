@@ -44,7 +44,6 @@ def analyze_match_logic(home, away):
     return pred, tip, chance
 
 
-@st.cache_data(ttl=1800)  # อัปเดตข้อมูลสดทุก 30 นาที
 def fetch_live_football_data(selected_date):
     formatted_date = selected_date.strftime("%Y%m%d")
     url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates={formatted_date}"
@@ -55,14 +54,14 @@ def fetch_live_football_data(selected_date):
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
             events = data.get("events", [])
             matches = []
 
             for event in events:
-                league = event.get("season", {}).get("slug", "Soccer")
+                league = event.get("season", {}).get("slug", "SOCCER")
                 date_utc = event.get("date", "")
                 time_thai = convert_utc_to_thai_time(date_utc)
 
@@ -98,33 +97,53 @@ def fetch_live_football_data(selected_date):
 
             return pd.DataFrame(matches)
         return pd.DataFrame()
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {e}")
+    except Exception:
         return pd.DataFrame()
 
 
-# --- หน้าจอแสดงผล Streamlit ---
-st.title("⚽ รายงานผลและวิเคราะห์บอลประจำวัน (Live)")
+# --- UI หลัก ---
+st.title("⚽ ระบบวิเคราะห์บอลออนไลน์")
 
-col1, col2 = st.columns([1, 2])
+tab1, tab2 = st.tabs(["📅 ตารางบอลประจำวัน", "🎯 วิเคราะห์รายคู่ (กำหนดเอง)"])
 
-with col1:
-    selected_date = st.date_input("📅 เลือกวันที่ต้องการดู:", datetime.now())
+with tab1:
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        selected_date = st.date_input("เลือกวันที่:", datetime.now())
 
-df = fetch_live_football_data(selected_date)
+    df = fetch_live_football_data(selected_date)
 
-if not df.empty:
-    with col2:
-        search = st.text_input("🔎 กรองชื่อทีมที่สนใจ:", "")
+    if not df.empty:
+        with col2:
+            search = st.text_input("🔎 กรองชื่อทีม:", "")
 
-    if search:
-        df = df[
-            df["ทีมเหย้า"].str.contains(search, case=False, na=False)
-            | df["ทีมเยือน"].str.contains(search, case=False, na=False)
-            | df["ลีก"].str.contains(search, case=False, na=False)
-        ]
+        if search:
+            df = df[
+                df["ทีมเหย้า"].str.contains(search, case=False, na=False)
+                | df["ทีมเยือน"].str.contains(search, case=False, na=False)
+                | df["ลีก"].str.contains(search, case=False, na=False)
+            ]
 
-    st.success(f"พบรายการแข่งขันทั้งหมด {len(df)} คู่")
-    st.dataframe(df, use_container_width=True, height=500)
-else:
-    st.warning("ไม่พบคู่แข่งขันในวันที่ระบุ หรือระบบขัดข้อง")
+        st.success(f"พบรายการแข่งขันทั้งหมด {len(df)} คู่")
+        st.dataframe(df, use_container_width=True, height=500)
+    else:
+        st.warning(
+            "ไม่พบข้อมูลการแข่งขันจากระบบอัตโนมัติในวันที่เลือก"
+            " สามารถใช้วิเคราะห์ระบุชื่อทีมเองในแท็บถัดไปได้ครับ"
+        )
+
+with tab2:
+    st.subheader("🎯 ป้อนชื่อทีมเพื่อวิเคราะห์รายคู่")
+    c1, c2, c3 = st.columns([2, 2, 1])
+
+    with c1:
+        custom_home = st.text_input("ทีมเหย้า:", value="Arsenal")
+    with c2:
+        custom_away = st.text_input("ทีมเยือน:", value="Chelsea")
+
+    if st.button("🔍 วิเคราะห์คู่นี้", type="primary"):
+        pred, tip, chance = analyze_match_logic(custom_home, custom_away)
+        st.info(f"**⚔️ คู่แข่งขัน:** {custom_home} vs {custom_away}")
+        st.write(f"**📌 วิเคราะห์:** {pred}")
+        st.write(f"**🎯 ทัศนะ:** {tip}")
+        st.write(f"**🔥 ความมั่นใจ:** {chance}")
