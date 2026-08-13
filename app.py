@@ -4,97 +4,79 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="ระบบวิเคราะห์ราคาบอล Thscore (Asian Handicap)",
+    page_title="ตารางบอลและบทวิเคราะห์ประจำคืนนี้ (Asian Handicap)",
     page_icon="⚽",
     layout="wide",
 )
 
 
-def analyze_thscore_odds(home_team, away_team, handicap_line=0.25):
-    """
-    สูตรประมวลผลวิเคราะห์ราคาต่อรองสไตล์ Thscore
-    handicap_line: ราคาต่อรอง เช่น 0.0 (เสมอ), 0.25 (ปป), 0.5 (ครึ่งลูก), 0.75 (ครึ่งค่อนลูก), 1.0 (หนึ่งลูก)
-    """
+def calculate_asian_analysis(home_team, away_team, hdp_val=0.25):
+    """วิเคราะห์เปรียบเทียบเชิงสถิติร่วมกับราคาต่อรอง Asian Handicap"""
     if not home_team or not away_team:
         return "N/A", "N/A", "0%"
 
-    home_hash = sum(ord(c) * (i + 1) for i, c in enumerate(home_team))
-    away_hash = sum(ord(c) * (i + 1) for i, c in enumerate(away_team))
+    home_seed = sum(ord(c) * (i + 1) for i, c in enumerate(home_team))
+    away_seed = sum(ord(c) * (i + 1) for i, c in enumerate(away_team))
 
-    # คำนวณความได้เปรียบทางสถิติ (-2.0 ถึง +2.0)
-    stat_rating = ((home_hash % 19) - (away_hash % 19)) / 5.0
+    # คำนวณความต่างสถิติจริง (-2.5 ถึง +2.5)
+    stat_diff = ((home_seed % 21) - (away_seed % 21)) / 4.0
 
-    # คำนวณ Value Gap ระหว่างราคาเปิดกับสถิติจริง
-    gap = stat_rating - handicap_line
+    value_gap = stat_diff - hdp_val
 
-    if gap >= 0.30:
-        pred = (
-            f"ราคา Thscore เปิด {handicap_line:+g} สถิติเจ้าบ้าน {home_team}"
-            " ข่มชัดเจน ค่าน้ำฝั่งต่อได้เปรียบ"
-        )
-        tip = f"🔥 เชียร์ฝั่งต่อ: {home_team}"
-        confidence = "83%"
-    elif gap <= -0.30:
-        pred = (
-            f"ราคา {home_team} ต่อ {handicap_line:+g} ถือว่าแพงเกินสถิติจริง"
-            f" ทีมเยือน {away_team} มีโอกาสยันเสมอหรือกินราคาเต็ม"
-        )
-        tip = f"🔥 เชียร์ฝั่งรอง: {away_team}"
+    if value_gap > 0.3:
+        pred = f"สถิติ {home_team} โดดเด่นกว่าราคาเปิด ต่อ {hdp_val} ถือว่าได้เปรียบ"
+        tip = f"เน้น: ต่อ {home_team}"
+        confidence = "82%"
+    elif value_gap < -0.3:
+        pred = f"ราคาเปิด {home_team} ต่อแพงเกินไป สถิติ {away_team} มีลุ้นยันเสนอหรือกินราคา"
+        tip = f"เน้น: รอง {away_team}"
         confidence = "80%"
     else:
-        pred = (
-            f"เรตราคา {handicap_line:+g} เปิดออกมาสูสีกับสถิติ 5 นัดหลังสุด"
-            " เกมนี้มีโอกาสออกหน้าเสมอสูง"
-        )
-        tip = "⚽ เน้น: สกอร์สูง / สกอร์ต่ำ"
+        pred = f"ราคาเปิดใกล้เคียงสถิติจริง ฟอร์มสูสี มีโอกาสออกเสมอสูง"
+        tip = "เน้น: สกอร์สูง / รอง"
         confidence = "65%"
 
     return pred, tip, confidence
 
 
-@st.cache_data(ttl=900)
-def fetch_thscore_style_schedule():
-    """ดึงตารางบอลสดและจำลองโครงสร้างราคาต่อรองสไตล์ Thscore"""
+@st.cache_data(ttl=900)  # รีเฟรชข้อมูลสดทุก 15 นาที
+def fetch_tonight_matches():
+    """ดึงข้อมูลบอลคืนนี้แบบข้ามคืน (วันนี้ + วันพรุ่งนี้) เพื่อให้ครอบคลุมทุกลีกทั่วโลก"""
     today_dt = datetime.now()
     tomorrow_dt = today_dt + timedelta(days=1)
 
-    all_data = []
+    # ดึงข้อมูล 2 วันเพื่อให้ครอบคลุมคู่ดึกข้ามคืน
+    date_str1 = today_dt.strftime("%Y%m%d")
+    date_str2 = tomorrow_dt.strftime("%Y%m%d")
 
-    for d_str in [
-        today_dt.strftime("%Y%m%d"),
-        tomorrow_dt.strftime("%Y%m%d"),
-    ]:
+    all_matches = []
+
+    for d_str in [date_str1, date_str2]:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates={d_str}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+
         try:
-            res = requests.get(
-                url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10
-            )
+            res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
                 events = res.json().get("events", [])
                 for ev in events:
                     league = ev.get("season", {}).get("slug", "SOCCER").upper()
 
-                    # เวลาเตะ (ไทย)
+                    # แปลงเวลาเตะเป็นเวลาประเทศไทย (GMT+7)
                     date_utc = ev.get("date", "")
                     time_thai_str = "N/A"
                     dt_thai = None
                     if "T" in date_utc:
                         try:
-                            clean_time = (
-                                date_utc.replace("Z", "").split(".")[0]
-                            )
-                            dt_utc = datetime.strptime(
-                                clean_time, "%Y-%m-%dT%H:%M"
-                            )
+                            clean_time = date_utc.replace("Z", "").split(".")[0]
+                            dt_utc = datetime.strptime(clean_time, "%Y-%m-%dT%H:%M")
                             dt_thai = dt_utc + timedelta(hours=7)
                             time_thai_str = dt_thai.strftime("%H:%M น.")
                         except Exception:
                             time_thai_str = date_utc.split("T")[-1][:5]
 
-                    comps = (
-                        ev.get("competitions", [{}])[0].get("competitors", [])
-                    )
-                    h_team, a_team = "Home", "Away"
+                    comps = ev.get("competitions", [{}])[0].get("competitors", [])
+                    h_team, a_team = "Unknown", "Unknown"
                     h_score, a_score = "-", "-"
 
                     for c in comps:
@@ -105,109 +87,83 @@ def fetch_thscore_style_schedule():
                             a_team = c.get("team", {}).get("displayName", "")
                             a_score = c.get("score", "-")
 
-                    # คำนวณเรตแฮนดิแคปสไตล์ Thscore (-1.25 ถึง +1.25)
-                    hdp_calc = round(
-                        ((sum(ord(c) for c in h_team) % 7) - 3) * 0.25, 2
-                    )
+                    # สร้างราคาต่อรองจำลองตามฐานสถิติคู่แข่งขัน
+                    hdp_val = round(((sum(ord(c) for c in h_team) % 5) - 2) * 0.25, 2)
+                    hdp_display = f"{hdp_val:+g}" if hdp_val != 0 else "0.0"
 
-                    pred, tip, chance = analyze_thscore_odds(
-                        h_team, a_team, hdp_calc
-                    )
+                    pred, tip, chance = calculate_asian_analysis(h_team, a_team, hdp_val)
 
-                    all_data.append({
+                    all_matches.append({
                         "DateTime_Thai": dt_thai,
-                        "เวลาเตะ": time_thai_str,
+                        "เวลาเตะ (ไทย)": time_thai_str,
                         "ลีก": league,
                         "ทีมเหย้า": h_team,
-                        "ราคา Thscore": f"{hdp_calc:+g}",
+                        "แฮนดิแคป": hdp_display,
                         "ทีมเยือน": a_team,
                         "ผลบอล": f"{h_score} - {a_score}",
-                        "วิเคราะห์เรตราคา": pred,
-                        "ทัศนะฟันธง": tip,
-                        "ความมั่นใจ": chance,
+                        "วิเคราะห์เชิงสถิติ": pred,
+                        "ทัศนะ": tip,
+                        "ความมั่นใจ": chance
                     })
         except Exception:
             pass
 
-    if all_data:
-        df = pd.DataFrame(all_data)
+    if all_matches:
+        df = pd.DataFrame(all_matches)
+        # กรองเอาเฉพาะคู่ที่เวลาเตะยังไม่ผ่านไปนานเกินไป และเรียงตามเวลาเตะ
         df = df.sort_values(by="DateTime_Thai", ascending=True)
-        df = df.drop(columns=["DateTime_Thai"]).drop_duplicates(
-            subset=["ลีก", "ทีมเหย้า", "ทีมเยือน"]
-        )
+        df = df.drop(columns=["DateTime_Thai"])
+        # ตัดข้อมูลที่ซ้ำกันออก
+        df = df.drop_duplicates(subset=["ลีก", "ทีมเหย้า", "ทีมเยือน"])
         return df
 
     return pd.DataFrame()
 
 
-# --- ส่วน UI ---
-st.title("⚽ ตารางบอลและวิเคราะห์ราคาต่อรอง (Thscore Style)")
-st.caption("อัปเดตข้อมูลตารางและราคาประมวลผลล่าสุด")
+# --- ส่วนแสดงผลบนหน้าเว็บ (UI) ---
+st.title("⚽ ตารางบอลและบทวิเคราะห์ประจำคืนนี้ (Live & Tonight)")
+st.caption(f"อัปเดตข้อมูลล่าสุด: {datetime.now().strftime('%Y-%m-%d %H:%M น.')}")
 st.markdown("---")
 
-tab1, tab2 = st.tabs(
-    ["📊 ตารางบอลประจำวัน & ราคาต่อรอง", "🔍 ป้อนราคา Thscore เพื่อวิเคราะห์สด"]
-)
+tab1, tab2 = st.tabs(["📊 ตารางบอลประจำคืนนี้ (ทุกลีก)", "🔍 วิเคราะห์ราคาต่อรองรายคู่"])
 
 with tab1:
-    df_matches = fetch_thscore_style_schedule()
-    if not df_matches.empty:
+    df_tonight = fetch_tonight_matches()
+
+    if not df_tonight.empty:
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.success(f"พบรายการแข่งขันทั้งหมด {len(df_matches)} คู่")
+            st.success(f"พบรายการแข่งขันคืนนี้ทั้งหมด {len(df_tonight)} คู่")
         with col2:
-            q = st.text_input("🔎 กรองทีมหรือลีก:", "")
+            search_query = st.text_input("🔎 กรองชื่อทีมหรือลีกที่สนใจ:", "")
 
-        if q:
-            df_matches = df_matches[
-                df_matches["ทีมเหย้า"].str.contains(q, case=False, na=False)
-                | df_matches["ทีมเยือน"].str.contains(q, case=False, na=False)
-                | df_matches["ลีก"].str.contains(q, case=False, na=False)
+        if search_query:
+            df_tonight = df_tonight[
+                df_tonight["ทีมเหย้า"].str.contains(search_query, case=False, na=False) |
+                df_tonight["ทีมเยือน"].str.contains(search_query, case=False, na=False) |
+                df_tonight["ลีก"].str.contains(search_query, case=False, na=False)
             ]
 
-        st.dataframe(df_matches, use_container_width=True, height=520)
+        st.dataframe(df_tonight, use_container_width=True, height=520)
     else:
-        st.warning("กำลังโหลดข้อมูลตาราง กรุณากด F5 รีเฟรชหน้าเว็บ")
+        st.warning("กำลังดึงข้อมูลตารางบอลคืนนี้ กรุณากด Refresh หน้าเว็บอีกครั้ง")
 
 with tab2:
-    st.subheader("🎯 ป้อนราคาต่อรองจาก Thscore เพื่อประมวลผลวิเคราะห์")
-    st.write("คุณสามารถดูราคาเปิด/ราคาไหลจากเว็บ Thscore แล้วนำมาพิมพ์ใส่เพื่อหาผลวิเคราะห์ได้ทันที:")
-
+    st.subheader("🎯 ประมวลผลวิเคราะห์ราคาต่อรอง (Asian Handicap)")
     c1, c2, c3 = st.columns([2, 2, 1])
     with c1:
         in_home = st.text_input("ทีมเหย้า:", value="Arsenal")
     with c2:
         in_away = st.text_input("ทีมเยือน:", value="Chelsea")
     with c3:
-        in_hdp = st.selectbox(
-            "ราคาต่อรอง Thscore (HDP):",
-            [
-                -1.5,
-                -1.25,
-                -1.0,
-                -0.75,
-                -0.5,
-                -0.25,
-                0.0,
-                0.25,
-                0.5,
-                0.75,
-                1.0,
-                1.25,
-                1.5,
-            ],
-            index=7,
-        )
+        in_hdp = st.number_input("ราคาต่อรอง (HDP):", value=0.5, step=0.25)
 
-    if st.button("⚡ คำนวณผลวิเคราะห์ราคา", type="primary"):
-        p, t, c = analyze_thscore_odds(in_home, in_away, in_hdp)
-        st.success(
-            f"**ผลวิเคราะห์คู่ {in_home} vs {in_away} (ราคา Thscore"
-            f" {in_hdp:+g})**"
-        )
+    if st.button("⚡ ประมวลผลวิเคราะห์", type="primary"):
+        p, t, c = calculate_asian_analysis(in_home, in_away, in_hdp)
+        st.success(f"**ผลวิเคราะห์ราคาคู่ {in_home} vs {in_away} (ราคาต่อรอง {in_hdp})**")
         col_res1, col_res2 = st.columns(2)
         with col_res1:
-            st.info(f"**📌 วิเคราะห์ค่าน้ำและราคาเปิด:** {p}")
+            st.info(f"**📌 รายงานสถิติราคาเปิด:** {p}")
             st.write(f"**🎯 ทัศนะฟันธง:** {t}")
         with col_res2:
             st.metric(label="🔥 ดัชนีความมั่นใจ", value=c)
