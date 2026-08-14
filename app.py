@@ -4,57 +4,53 @@ import math
 from datetime import datetime
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Global Football Analytics Dashboard", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Real Match Football Analytics", page_icon="⚽", layout="wide")
 
-st.title("⚽ Global Football Daily Analytics & Value Bet Predictor")
-st.caption("ดึงโปรแกรมการแข่งขันครบถ้วนประจำวัน พร้อมวิเคราะห์ xG และสรุปฟันธงการลงทุน")
+st.title("⚽ Real-Time Football Analytics & Value Bet Predictor")
+st.caption("ดึงรายการแข่งขันจริงประจำวันจาก Football-Data API พร้อมวิเคราะห์ xG และสรุปฟันธง")
 
-# --- 1. MULTI-SOURCE DAILY FIXTURES FETCHER ---
-@st.cache_data(ttl=900)  # Refresh ทุก 15 นาที
-def fetch_daily_matches(date_str):
-    """
-    ดึงโปรแกรมการแข่งขันฟุตบอลประจำวันพร้อมระบบกันพัง
-    """
-    matches = []
+# --- 1. FETCH REAL MATCHES FROM FOOTBALL-DATA.ORG ---
+@st.cache_data(ttl=900)
+def fetch_real_matches(api_key, date_str):
+    """ ดึงตารางแข่งขันจริงของวันที่เลือก """
+    url = "https://api.football-data.org/v4/matches"
+    headers = {"X-Auth-Token": api_key}
+    params = {
+        "dateFrom": date_str,
+        "dateTo": date_str
+    }
     
-    # 📌 Source 1: Open Football Database
     try:
-        url = "https://raw.githubusercontent.com/openfootball/football.json/master/2025-26/en.1.json"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, headers=headers, params=params, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            league_name = data.get("name", "Premier League")
-            for m in data.get("matches", []):
-                m_date = m.get("date", "")
-                if m_date == date_str or not date_str:
-                    matches.append({
-                        "league": f"🏆 {league_name}",
-                        "home": m.get("team1"),
-                        "away": m.get("team2"),
-                        "time": "21:00",
-                        "home_xg": 1.75,
-                        "away_xg": 1.15
-                    })
-    except Exception:
-        pass
-
-    # 📌 Source 2: Global Matches Database (สำรองลีกล่างและบอลทุกลีก)
-    global_database = [
-        {"league": "🏆 Australia NPL NSW", "home": "Sydney FC Youth", "away": "St George City FA", "time": "16:30", "home_xg": 1.70, "away_xg": 1.30},
-        {"league": "🏆 Australia NPL NSW", "home": "Blacktown City", "away": "Manly United", "time": "18:00", "home_xg": 2.10, "away_xg": 0.95},
-        {"league": "🏆 English Premier League", "home": "Liverpool FC", "away": "AFC Bournemouth", "time": "21:00", "home_xg": 2.25, "away_xg": 0.85},
-        {"league": "🏆 English Premier League", "home": "Arsenal", "away": "Chelsea", "time": "23:30", "home_xg": 1.90, "away_xg": 1.10},
-        {"league": "🏆 Spanish La Liga", "home": "Real Madrid", "away": "Barcelona", "time": "02:00", "home_xg": 1.75, "away_xg": 1.60},
-        {"league": "🏆 Thai League 1", "home": "Buriram United", "away": "BG Pathum United", "time": "19:00", "home_xg": 1.80, "away_xg": 1.25},
-        {"league": "🏆 German Bundesliga", "home": "Bayern Munich", "away": "Borussia Dortmund", "time": "20:30", "home_xg": 2.40, "away_xg": 1.30},
-        {"league": "🏆 Italian Serie A", "home": "Inter Milan", "away": "AC Milan", "time": "01:45", "home_xg": 1.80, "away_xg": 1.20}
-    ]
-    
-    # รวมข้อมูลจาก Database หากวันนั้นไม่มีแมตช์ใน Open Data
-    for db_m in global_database:
-        matches.append(db_m)
-        
-    return matches
+            matches_raw = data.get("matches", [])
+            parsed_matches = []
+            
+            for m in matches_raw:
+                league_name = m.get("competition", {}).get("name", "Unknown League")
+                home_team = m.get("homeTeam", {}).get("name", "Home")
+                away_team = m.get("awayTeam", {}).get("name", "Away")
+                
+                # แปลงเวลาเตะเป็นเวลาท้องถิ่น
+                utc_time = m.get("utcDate", "")
+                time_str = utc_time[11:16] if len(utc_time) >= 16 else "--:--"
+                
+                parsed_matches.append({
+                    "id": m.get("id"),
+                    "league": league_name,
+                    "home": home_team,
+                    "away": away_team,
+                    "time": time_str,
+                    "status": m.get("status")
+                })
+            return parsed_matches, None
+        elif res.status_code == 403:
+            return None, "API Key ไม่ถูกต้อง หรือสิทธิ์การใช้งานจำกัด"
+        else:
+            return None, f"Error {res.status_code}: ไม่สามารถดึงข้อมูลได้"
+    except Exception as e:
+        return None, str(e)
 
 # --- 2. MATH & PROBABILITY CALCULATIONS ---
 def poisson_pmf(k, lambda_val):
@@ -104,15 +100,29 @@ def calculate_analytics(home_xg, away_xg, handicap, target_total=2.5, max_goals=
 # --- 3. UI DASHBOARD ---
 st.sidebar.header("⚙️ ตัวเลือกลีก & แมตช์ประจำวัน")
 
-selected_date_obj = st.sidebar.date_input("📅 เลือกวันที่:", datetime.now())
+api_key = st.secrets.get("FOOTBALL_DATA_API_KEY") if "FOOTBALL_DATA_API_KEY" in st.secrets else st.sidebar.text_input("🔑 ใส่ Football-Data API Key:", type="password")
+
+if not api_key:
+    st.info("👈 กรุณากรอก **Football-Data API Key** ในแถบเมนูด้านซ้ายเพื่อโหลดตารางแข่งจริง")
+    st.stop()
+
+selected_date_obj = st.sidebar.date_input("📅 เลือกวันที่เตะ:", datetime.now())
 selected_date_str = selected_date_obj.strftime("%Y-%m-%d")
 
-with st.spinner(f"🤖 กำลังโหลดข้อมูลรายการแข่งขันประจำวัน..."):
-    matches = fetch_daily_matches(selected_date_str)
+with st.spinner(f"🤖 กำลังดึงโปรแกรมการแข่งขันจริงของวันที่ {selected_date_str}..."):
+    matches, error = fetch_real_matches(api_key, selected_date_str)
 
-st.sidebar.success(f"✅ โหลดสำเร็จพร้อมวิเคราะห์ {len(matches)} คู่!")
+if error:
+    st.sidebar.error(f"เกิดข้อผิดพลาด: {error}")
+    st.stop()
 
-# 1. กรองตามลีก
+if not matches:
+    st.warning(f"ไม่พบโปรแกรมการแข่งขันจริงในวันที่ {selected_date_str} (อาจไม่มีการแข่งขันในลีกหลักวันนี้)")
+    st.stop()
+
+st.sidebar.success(f"✅ ดึงโปรแกรมแข่งจริงสำเร็จ {len(matches)} คู่!")
+
+# 1. กรองตามลีกจริง
 all_leagues = sorted(list(set([m["league"] for m in matches])))
 selected_league = st.sidebar.selectbox("🏆 เลือกลีกที่ต้องการ:", ["-- แสดงทุกลีก --"] + all_leagues)
 
@@ -121,9 +131,9 @@ if selected_league != "-- แสดงทุกลีก --":
 else:
     filtered_matches = matches
 
-# 2. เลือกคู่แข่ง
-match_options = {f"[{m['time']}] [{m['league']}] {m['home']} vs {m['away']}": m for m in filtered_matches}
-selected_match_label = st.sidebar.selectbox(f"⚽ เลือกคู่แข่งขัน:", list(match_options.keys()))
+# 2. เลือกคู่แข่งจริง
+match_options = {f"[{m['time']} UTC] [{m['league']}] {m['home']} vs {m['away']}": m for m in filtered_matches}
+selected_match_label = st.sidebar.selectbox(f"⚽ เลือกคู่แข่งขัน ({len(filtered_matches)} คู่):", list(match_options.keys()))
 selected_match = match_options[selected_match_label]
 
 home_team = selected_match["home"]
@@ -132,13 +142,13 @@ away_team = selected_match["away"]
 # --- DISPLAY MATCH DETAILS ---
 st.markdown("---")
 st.subheader(f"🏟️ {home_team} vs {away_team}")
-st.caption(f"📅 วันที่เตะ: {selected_date_str} | เวลา: {selected_match['time']} น. | {selected_match['league']}")
+st.caption(f"📅 วันที่เตะ: {selected_date_str} | เวลา: {selected_match['time']} UTC | 🏆 ลีก: {selected_match['league']}")
 
 col_xg1, col_xg2 = st.columns(2)
 with col_xg1:
-    home_xg = st.number_input(f"xG {home_team}:", min_value=0.1, max_value=6.0, value=selected_match.get("home_xg", 1.65), step=0.05)
+    home_xg = st.number_input(f"xG {home_team}:", min_value=0.1, max_value=6.0, value=1.65, step=0.05)
 with col_xg2:
-    away_xg = st.number_input(f"xG {away_team}:", min_value=0.1, max_value=6.0, value=selected_match.get("away_xg", 1.15), step=0.05)
+    away_xg = st.number_input(f"xG {away_team}:", min_value=0.1, max_value=6.0, value=1.15, step=0.05)
 
 st.markdown("---")
 st.subheader("🎯 วิเคราะห์ราคาต่อรอง (Asian Handicap) & สูง/ต่ำ")
