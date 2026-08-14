@@ -5,8 +5,8 @@ from datetime import datetime
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="ตารางวิเคราะห์บอล 500+ คู่ทั่วโลก", page_icon="⚽", layout="wide")
 
-st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทุกลีกทั่วโลก")
-st.caption("ดึงโปรแกรมแข่งขัน 500+ คู่ต่อวัน (รวม J1-J2, K1-K2) กำหนดราคาต่อรองมาตรฐาน (+ = เจ้าบ้านต่อ, - = ทีมเยือนต่อ)")
+st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทุกลีกทั่วโลก (Balanced Model)")
+st.caption("ปรับปรุงอัลกอริทึมวิเคราะห์ตามความเสี่ยงจริง ไม่อคติเข้าข้างทีมต่อ คำนวณ Value ทั้งฝั่งทีมต่อและทีมรอง")
 
 # --- Dictionary แปลชื่อลีกและทีมเป็นภาษาไทย ---
 TRANSLATION_MAP = {
@@ -20,7 +20,7 @@ TRANSLATION_MAP = {
     "K League 1": "เคลีก 1 เกาหลีใต้",
     "K League 2": "เคลีก 2 เกาหลีใต้",
     
-    # ลีกยอดนิยมอื่นๆ
+    # ลีกยอดนิยม
     "English Premier League": "พรีเมียร์ลีก อังกฤษ",
     "Premier League": "พรีเมียร์ลีก อังกฤษ",
     "Spanish LaLiga": "ลาลีกา สเปน",
@@ -33,7 +33,6 @@ TRANSLATION_MAP = {
     "Australian A-League": "เอลีก ออสเตรเลีย",
     "UEFA Champions League": "ยูฟ่า แชมเปียนส์ลีก",
     "UEFA Europa League": "ยูฟ่า ยูโรปาลีก",
-    "English Championship": "เอฟแอล แชมเปียนชิป อังกฤษ",
     
     # ทีมยอดนิยม
     "Kawasaki Frontale": "คาวาซากิ ฟรอนตาเล่",
@@ -54,33 +53,22 @@ TRANSLATION_MAP = {
 }
 
 def translate_to_thai(text):
-    """ ฟังก์ชันแปลชื่อลีก/ชื่อทีมเป็นภาษาไทย """
-    if not text:
-        return text
-    if text in TRANSLATION_MAP:
-        return TRANSLATION_MAP[text]
+    if not text: return text
+    if text in TRANSLATION_MAP: return TRANSLATION_MAP[text]
     
     translated = text
     replacements = {
-        "League": "ลีก",
-        "Cup": "คัพ",
-        "Division": "ดิวิชั่น",
-        "National": "เนชันแนล",
-        "Youth": "เยาวชน",
-        "Women": "ทีมหญิง",
+        "League": "ลีก", "Cup": "คัพ", "Division": "ดิวิชั่น",
+        "National": "เนชันแนล", "Youth": "เยาวชน", "Women": "ทีมหญิง",
         "International": "กระชับมิตร/นานาชาติ"
     }
     for en, th in replacements.items():
         translated = translated.replace(en, th)
-        
     return translated
 
 # --- 1. MULTI-LEAGUE FETCHER ---
 @st.cache_data(ttl=1800)
 def fetch_500plus_matches(target_date_str):
-    """
-    ดึงตารางแข่งขันรวม 500+ คู่
-    """
     league_slugs = [
         "all", "jpn.1", "jpn.2", "kor.1", "kor.2", "tha.1", "tha.2", 
         "eng.1", "eng.2", "eng.3", "eng.4", "esp.1", "esp.2", "ita.1", "ita.2", 
@@ -120,16 +108,11 @@ def fetch_500plus_matches(target_date_str):
                     date_full = comp.get("date", "")
                     time_str = date_full[11:16] if len(date_full) >= 16 else "--:--"
                     
-                    # แปลภาษาไทย
-                    th_league = translate_to_thai(raw_league)
-                    th_home = translate_to_thai(raw_home)
-                    th_away = translate_to_thai(raw_away)
-                    
                     all_matches.append({
                         "id": match_id,
-                        "league": f"🏆 {th_league}",
-                        "home": th_home,
-                        "away": th_away,
+                        "league": f"🏆 {translate_to_thai(raw_league)}",
+                        "home": translate_to_thai(raw_home),
+                        "away": translate_to_thai(raw_away),
                         "time": time_str
                     })
                     seen_match_keys.add(match_id)
@@ -138,28 +121,58 @@ def fetch_500plus_matches(target_date_str):
 
     return all_matches
 
-# --- 2. ANALYTICS WITH NEW HANDICAP RULE ---
-def analyze_by_new_odds_rule(handicap, total, home_team, away_team):
+# --- 2. BALANCED ANALYTICS ENGINE (ไม่เอียงทีมต่อ) ---
+def analyze_balanced_odds(handicap, total, home_team, away_team):
     """
-    กำหนดระบบราคาต่อรองใหม่:
-    - ถ้า handicap > 0 : เจ้าบ้านต่อ (เช่น +0.5 คือ เจ้าบ้านต่อ)
-    - ถ้า handicap < 0 : ทีมเยือนต่อ (เช่น -0.5 คือ ทีมเยือนต่อ)
-    - ถ้า handicap == 0 : เสมอ
+    อัลกอริทึมวิเคราะห์น้ำหนักความเสี่ยงจริง (ไม่เชียร์ทีมต่อลอยๆ):
+    - ราคาต่อสูง (> 0.75 หรือ < -0.75) ความเสี่ยงยิงไม่ขาดเพิ่มขึ้น -> แนะนำรอง
+    - ราคาต่อก้ำกึ่ง (0.25 ถึง 0.5) ประเมินความได้เปรียบเจ้าบ้าน vs ทีมเยือน
     """
-    if handicap > 0:
-        ah_display = f"🔥 **เลือก: ต่อ {home_team}** (เจ้าบ้านต่อ {handicap})"
-    elif handicap < 0:
-        ah_display = f"🔥 **เลือก: ต่อ {away_team}** (ทีมเยือนต่อ {abs(handicap)})"
-    else:
-        ah_display = f"⚖️ **เลือก: เสมอ** (ไม่มีทีมต่อรอง)"
+    abs_hcap = abs(handicap)
+    
+    # 📌 1. วิเคราะห์ต่อ/รอง แบบสะท้อนความจริง
+    if handicap > 0: # เจ้าบ้านเป็นฝ่ายต่อ
+        if abs_hcap >= 1.0:
+            # ต่อแพงเกินไป (ต้องชนะเกิน 1-2 ลูกขึ้นไป) -> เสี่ยงสูง แนะนำรองทีมเยือน
+            ah_display = f"🛡️ **เลือก: รอง {away_team}** (ทีมต่อแพง แบกราคา {handicap})"
+            ah_reason = f"ทีมเหย้าแบกราคาต่อสูงถึง {handicap} ประตู โอกาสกินราคายาก ทีมเยือนได้เปรียบเรื่องแต้มต่อ"
+        elif abs_hcap == 0.25:
+            # ต่อ ปป. ก้ำกึ่งมีโอกาสเสมอสูง
+            ah_display = f"🛡️ **เลือก: รอง {away_team}** (+0.25)"
+            ah_reason = f"ต่อราคาแค่น้ำส่อง ปป. ชวนเสี่ยงรอง {away_team} ผลเสมอรับเงินครึ่งหนึ่ง"
+        else:
+            # ต่อ 0.5 หรือ 0.75
+            ah_display = f"🔥 **เลือก: ต่อ {home_team}** (-{handicap})"
+            ah_reason = f"เจ้าบ้านได้เปรียบในรัง ได้ลุ้นยิงเฉือนชนะราคาต่อ {handicap}"
 
-    # ฟันธงสูง/ต่ำ
-    if total >= 2.75:
-        ou_display = f"⚽ **เลือก: สกอร์สูง (OVER {total})**"
-    else:
+    elif handicap < 0: # ทีมเยือนเป็นฝ่ายต่อ
+        if abs_hcap >= 1.0:
+            # ทีมเยือนต่อแพงนอกบ้าน -> เสี่ยง ย้ำให้รองเจ้าบ้าน
+            ah_display = f"🛡️ **เลือก: รอง {home_team}** (ได้เปรียบในบ้าน +{abs_hcap})"
+            ah_reason = f"ทีมเยือนต้องออกมาเล่นนอกบ้านแถมต่อสูงถึง {abs_hcap} ประตู เจ้าบ้านได้เปรียบเสียงเชียร์และราคา"
+        elif abs_hcap == 0.25:
+            ah_display = f"🛡️ **เลือก: รอง {home_team}** (+0.25)"
+            ah_reason = f"ทีมเยือนต่อ ปป. นอกบ้านไม่น่าเสี่ยง เลือกวางรอง {home_team} สดใสกว่า"
+        else:
+            ah_display = f"🔥 **เลือก: ต่อ {away_team}** (-{abs_hcap})"
+            ah_reason = f"ทีมเยือนฟอร์มข่มชัดเจน บีบราคาต่อ {abs_hcap} นอกบ้านได้ลุ้นเชียร์"
+
+    else: # เสมอ 0.0
+        ah_display = f"⚖️ **เลือก: เชียร์ {home_team}** (เสมอ ได้เปรียบในบ้าน)"
+        ah_reason = "ราคาเสมอไม่มีแต้มต่อ เลือกถือฝั่งเจ้าบ้านได้เปรียบความคุ้นชินสนาม"
+
+    # 📌 2. วิเคราะห์เรตสูง/ต่ำ แบบสมดุล
+    if total >= 3.0:
         ou_display = f"🔒 **เลือก: สกอร์ต่ำ (UNDER {total})**"
+        ou_reason = f"เรตเปิดมาสูงถึง {total} ลูก โอกาสยิงทะลุกำแพงยาก แนะนำลุ้นสกอร์ต่ำ"
+    elif total <= 2.25:
+        ou_display = f"⚽ **เลือก: สกอร์สูง (OVER {total})**"
+        ou_reason = f"เรตเปิดต่ำเพียง {total} ลูก มีโอกาสเกิดประตูทะลุราคาได้ง่ายกว่า"
+    else: # 2.5 ถึง 2.75
+        ou_display = f"⚽ **เลือก: สกอร์สูง (OVER {total})**"
+        ou_reason = f"ราคาเรตมาตรฐาน {total} ลูก มีลุ้นประตูเปิดหน้าแลกทั้งสองฝั่ง"
 
-    return ah_display, ou_display
+    return ah_display, ah_reason, ou_display, ou_reason
 
 # --- 3. UI DASHBOARD & FILTERS ---
 st.sidebar.header("⚙️ ตัวกรองโปรแกรมแข่ง")
@@ -191,7 +204,7 @@ if search_kw:
     ]
 
 st.markdown(f"### 📅 รายการแข่งขันประจำวันที่ {selected_date_str} (แสดง {len(display_matches)} / {len(matches)} คู่)")
-st.caption("💡 **คำแนะนำราคาต่อรอง:** ค่าเป็นบวก (`+0.5`) = เจ้าบ้านต่อ | ค่าเป็นลบ (`-0.5`) = ทีมเยือนต่อ")
+st.caption("💡 **หมายเหตุระบบ:** ปรับปรุงอัลกอริทึมเพื่อกระจายน้ำหนักความเสี่ยงระหว่าง **ทีมต่อ** และ **ทีมรอง** อย่างเป็นธรรม ไม่เอนเอียง")
 st.markdown("---")
 
 # --- LOOP DISPLAY MATCHES ---
@@ -207,14 +220,14 @@ for idx, m in enumerate(display_matches):
             st.markdown(f"#### 🏟️ [{m['time']}] {home} vs {away}")
             st.caption(f"{m['league']}")
             
-        # 2. ปรับเปลี่ยนราคาต่อรองหน้ากระดานตามกฎใหม่
+        # 2. ปรับเปลี่ยนราคาต่อรองหน้ากระดาน
         with c_odds_input:
             st.markdown("**🎯 ราคาเปิดหน้ากระดาน:**")
             hcap = st.number_input(f"ราคาต่อรอง (+เหย้า/-เยือน):", value=0.5, step=0.25, key=f"hcap_{idx}_{m['id']}")
             tot = st.number_input(f"เรตสูง/ต่ำ:", value=2.5, step=0.25, key=f"tot_{idx}_{m['id']}")
 
-        # วิเคราะห์ตามเงื่อนไขราคาใหม่
-        ah_display, ou_display = analyze_by_new_odds_rule(hcap, tot, home, away)
+        # วิเคราะห์ตามโมเดลสมดุลใหม่
+        ah_display, ah_reason, ou_display, ou_reason = analyze_balanced_odds(hcap, tot, home, away)
 
         # 3. ฟันธง ต่อ/รอง
         with c_ah_rec:
@@ -226,11 +239,9 @@ for idx, m in enumerate(display_matches):
             st.markdown("**⚽ ฟันธง สูง/ต่ำ:**")
             st.markdown(ou_display)
 
-        # รายละเอียดคำแนะนำเพิ่มเติม
-        with st.expander(f"🔍 สรุปข้อมูลการเชียร์ ({home} vs {away})"):
-            st.write(f"* **คู่แข่งขัน:** {home} (เจ้าบ้าน) vs {away} (ทีมเยือน)")
-            st.write(f"* **ราคาต่อรองที่ตั้งไว้:** `{hcap}` | **เรตสูง/ต่ำ:** `{tot}`")
-            st.write(f"* **สรุปผลวิเคราะห์ฝั่งต่อรอง:** {ah_display}")
-            st.write(f"* **สรุปผลวิเคราะห์ฝั่งสกอร์:** {ou_display}")
+        # รายละเอียดและเหตุผลประกอบ
+        with st.expander(f"🔍 ดูเหตุผลการวิเคราะห์เจาะลึก ({home} vs {away})"):
+            st.write(f"* **เหตุผลฝั่งต่อ/รอง:** {ah_reason}")
+            st.write(f"* **เหตุผลฝั่งสกอร์:** {ou_reason}")
 
         st.markdown("---")
