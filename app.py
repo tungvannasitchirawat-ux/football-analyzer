@@ -7,7 +7,7 @@ from datetime import datetime
 st.set_page_config(page_title="Daily All Match Predictions", page_icon="⚽", layout="wide")
 
 st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลรวมทุกลีกประจำวัน")
-st.caption("รวมโปรแกรมแข่งทุกลีกทั่วโลก คำนวณความน่าจะเป็น สรุปฟันธง ต่อ/รอง และ สูง/ต่ำ ให้ครบทุกคู่ในหน้าเดียว")
+st.caption("รวมโปรแกรมแข่งทุกลีกทั่วโลก คำนวณความน่าจะเป็น สรุปฟันธงเลือกฝั่งให้อย่างชัดเจนทุกลีกในหน้าเดียว")
 
 # --- 1. GLOBAL FIXTURES FETCHER ---
 @st.cache_data(ttl=1800)
@@ -116,7 +116,6 @@ selected_date_str = selected_date_obj.strftime("%Y-%m-%d")
 with st.spinner(f"🤖 กำลังโหลดโปรแกรมแข่งขันทั้งหมดของวันที่ {selected_date_str}..."):
     matches = fetch_global_matches_by_date(selected_date_str)
 
-# กรองตามลีก
 all_leagues = sorted(list(set([m["league"] for m in matches])))
 selected_league = st.sidebar.selectbox("🏆 กรองเฉพาะลีกที่ต้องการ:", ["-- แสดงทุกลีก --"] + all_leagues)
 
@@ -130,7 +129,7 @@ st.sidebar.success(f"✅ โหลดสำเร็จทั้งหมด {le
 st.markdown(f"### 📅 รายการแข่งขันประจำวันที่ {selected_date_str} (แสดงทั้งหมด {len(display_matches)} คู่)")
 st.markdown("---")
 
-# --- LOOP แสดงผลทุกคู่ในหน้าเดียว ---
+# --- LOOP แสดงผลแบบฟันธงเลือกฝั่ง 100% ---
 for idx, m in enumerate(display_matches):
     home = m["home"]
     away = m["away"]
@@ -141,22 +140,18 @@ for idx, m in enumerate(display_matches):
     
     res = calculate_analytics(h_xg, a_xg, hcap, tot)
     
-    # คำนวณคำแนะนำ
-    if res['win'] >= 52.0:
-        ah_rec = f"🟢 **ต่อ {home}** ({hcap})"
-    elif res['loss'] >= 52.0:
-        ah_rec = f"🟢 **รอง {away}**"
+    # 📌 บังคับสรุปเลือกฝั่งต่อ/รอง (Asian Handicap)
+    if res['win'] >= res['loss']:
+        ah_rec = f"🔥 **เลือก: ต่อ {home}** (เรต {hcap})"
     else:
-        ah_rec = "🔴 **ผ่าน (สูสี)**"
+        ah_rec = f"🛡️ **เลือก: รอง {away}**"
 
-    if res['expected_total_goals'] > (tot + 0.3):
-        ou_rec = f"🟢 **สูง (OVER {tot})**"
-    elif res['expected_total_goals'] < (tot - 0.3):
-        ou_rec = f"🟢 **ต่ำ (UNDER {tot})**"
+    # 📌 บังคับสรุปเลือกฝั่งสูง/ต่ำ (Over/Under)
+    if res['expected_total_goals'] >= tot:
+        ou_rec = f"⚽ **เลือก: สกอร์สูง (OVER {tot})**"
     else:
-        ou_rec = "🔴 **ผ่าน**"
+        ou_rec = f"🔒 **เลือก: สกอร์ต่ำ (UNDER {tot})**"
 
-    # แสดงผลเป็น Card ของแต่ละคู่
     with st.container():
         c_info, c_ah, c_ou = st.columns([2, 1.5, 1.5])
         
@@ -172,11 +167,11 @@ for idx, m in enumerate(display_matches):
             st.markdown("**⚽ สรุปฝั่งสูง/ต่ำ:**")
             st.markdown(ou_rec)
             
-        # ปุ่มกดดูรายละเอียดเพิ่มเติมของคู่นั้นๆ
         with st.expander(f"🔍 กดเพื่อดูวิเคราะห์สถิติแบบละเอียด ({home} vs {away})"):
             col_det1, col_det2 = st.columns(2)
             with col_det1:
-                st.write(f"* **โอกาสชนะราคาต่อรอง ({home}):** {res['win']:.2f}%")
+                st.write(f"* **โอกาสชนะราคาฝั่งต่อ ({home}):** {res['win']:.2f}%")
+                st.write(f"* **โอกาสรอดราคาฝั่งรอง ({away}):** {res['loss']:.2f}%")
                 st.write(f"* **ค่าน้ำต่อรองที่คุ้มเสี่ยง (Fair Odds):** `{res['fair_odds_ah']:.2f}`")
             with col_det2:
                 st.write(f"* **คาดการณ์ประตูรวม:** {res['expected_total_goals']:.2f} ลูก")
