@@ -6,22 +6,51 @@ import math
 st.set_page_config(page_title="Global Football & Value Bet Predictor", page_icon="⚽", layout="wide")
 
 st.title("⚽ Global Football & Value Bet Predictor")
-st.caption("ดึงข้อมูลแมตช์ทุกลีกทั่วโลก คำนวณ xG + Poisson พร้อมสรุปคำแนะนำ (ฝั่งน่าต่อ/รอง & สูง/ต่ำ)")
+st.caption("ดึงข้อมูลแมตช์ทุกลีกฮอตทั่วโลก คำนวณ xG + Poisson พร้อมสรุปคำแนะนำ (ฝั่งน่าต่อ/รอง & สูง/ต่ำ)")
 
-# --- 1. FUNCTION ดึงรายการลีกฟุตบอลทั้งหมดทั่วโลก ---
+# --- 1. FUNCTION รายชื่อ "ลีกฮอต" ตามรูป + ดึงทุกลีกเสริม ---
 @st.cache_data(ttl=3600)
 def get_all_soccer_sports(api_key):
-    """ ดึงรายชื่อลีกฟุตบอลทั้งหมดที่มีใน The Odds API """
+    """ รายชื่อลีกฮอตตามรูปภาพ + ดึงทุกลีกเสริมจาก API """
+    
+    # กำหนดรายการ "ลีกฮอต" ตามรูปภาพของผู้ใช้
+    hot_leagues = [
+        {"title": "🔥 ไทยลีก (Thai League 1)", "key": "soccer_thailand_league1"},
+        {"title": "🔥 พรีเมียร์ลีก (English Premier League)", "key": "soccer_epl"},
+        {"title": "🔥 เซเรียอา (Italian Serie A)", "key": "soccer_italy_serie_a"},
+        {"title": "🔥 ลาลีกา (Spanish La Liga)", "key": "soccer_spain_la_liga"},
+        {"title": "🔥 บุนเดสลีกา (German Bundesliga)", "key": "soccer_germany_bundesliga"},
+        {"title": "🔥 ลีกเอิง ฝรั่งเศส (French Ligue 1)", "key": "soccer_france_ligue_one"},
+        {"title": "🔥 ฟุตบอล ยูโร (UEFA European Championship)", "key": "soccer_uefa_european_championship"},
+        {"title": "🔥 ยูฟ่าแชมเปียนส์ลีก (UEFA Champions League)", "key": "soccer_uefa_champs_league"},
+        {"title": "🔥 ยูฟ่ายูโรปาลีก (UEFA Europa League)", "key": "soccer_uefa_europa_league"},
+        {"title": "🔥 ฟุตบอลชิงแชมป์สโมสรโลก (FIFA Club World Cup)", "key": "soccer_fifa_club_world_cup"},
+        {"title": "🔥 EFLแชมเปียนชิป (English Championship)", "key": "soccer_efl_champ"},
+        {"title": "🔥 บุนเดสลีก้า 2 (German Bundesliga 2)", "key": "soccer_germany_bundesliga2"},
+        {"title": "🔥 ลีกเดอช (French Ligue 2)", "key": "soccer_france_ligue_two"},
+    ]
+    
+    # ดึงลีกอื่นๆ ทั่วโลกจาก API เข้ามาเสริม
     url = "https://api.the-odds-api.com/v4/sports"
     params = {"apiKey": api_key}
+    
     try:
         res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
-        # คัดกรองเฉพาะกีฬาฟุตบอล (soccer_...)
-        soccer_leagues = [s for s in res.json() if s.get("group") == "Soccer"]
-        return soccer_leagues
+        if res.status_code == 200:
+            api_leagues = [s for s in res.json() if s.get("group") == "Soccer"]
+            
+            # ตรวจสอบเพื่อไม่ให้ชื่อลีกซ้ำกับลีกฮอต
+            hot_keys = {hl["key"] for hl in hot_leagues}
+            for al in api_leagues:
+                if al.get("key") not in hot_keys:
+                    hot_leagues.append({
+                        "title": f"🌐 {al.get('title')}",
+                        "key": al.get("key")
+                    })
     except Exception:
-        return [{"key": "soccer_epl", "title": "English Premier League"}]
+        pass
+
+    return hot_leagues
 
 @st.cache_data(ttl=600)
 def fetch_odds_for_league(api_key, sport_key):
@@ -97,16 +126,16 @@ if not api_key:
     st.info("👈 กรุณากรอก **Odds API Key** ในแถบเมนูด้านซ้ายเพื่อเริ่มใช้งาน")
     st.stop()
 
-# ดึงทุกลีกทั่วโลก
+# ดึงทุกลีกฮอต + ลีกทั่วโลก
 all_leagues = get_all_soccer_sports(api_key)
 
 if not all_leagues:
     st.error("ไม่สามารถดึงข้อมูลลีกได้ โปรดตรวจสอบ API Key")
     st.stop()
 
-# Dropdown เลือก ลีก
-league_dict = {f"🏆 {l['title']}": l['key'] for l in all_leagues}
-selected_league_label = st.sidebar.selectbox("เลือกลีกที่ต้องการ:", list(league_dict.keys()))
+# Dropdown เลือกลีก (ลีกฮอตจะอยู่ด้านบนสุด)
+league_dict = {l['title']: l['key'] for l in all_leagues}
+selected_league_label = st.sidebar.selectbox("เลือกลีกฮอต / ลีกที่ต้องการ:", list(league_dict.keys()))
 selected_sport_key = league_dict[selected_league_label]
 
 # ดึงแมตช์ในลีกที่เลือก
@@ -152,7 +181,7 @@ if bookmakers:
 # --- DISPLAY MATCH DATA ---
 st.markdown("---")
 st.subheader(f"🏟️ {home_team} vs {away_team}")
-st.caption(f"🏆 ลีก: {selected_match_label} | เวลาแข่ง: {selected_match.get('commence_time')[:16].replace('T', ' ')}")
+st.caption(f"🏆 ลีก: {selected_league_label} | เวลาแข่ง: {selected_match.get('commence_time')[:16].replace('T', ' ')}")
 
 col_xg1, col_xg2 = st.columns(2)
 with col_xg1:
