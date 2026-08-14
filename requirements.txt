@@ -1,3 +1,2 @@
 streamlit
-scipy
-numpy
+requests
