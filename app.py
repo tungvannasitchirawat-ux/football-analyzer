@@ -1,10 +1,12 @@
 import streamlit as st
-import numpy as np
-from scipy.stats import poisson
+import math
 
-st.set_page_config(page_title="Football Odds & AH Calculator", layout="wide")
-
+st.set_page_config(page_title="Football Asian Handicap & Probability Calculator", layout="wide")
 st.title("⚽ Football Asian Handicap & Probability Calculator")
+
+# ฟังก์ชันคำนวณ Poisson โดยใช้ math (ไม่ต้องง้อ scipy)
+def poisson_pmf(k, lambda_val):
+    return (math.pow(lambda_val, k) * math.exp(-lambda_val)) / math.factorial(k)
 
 col1, col2 = st.columns(2)
 
@@ -18,16 +20,13 @@ with col2:
     handicap = st.selectbox(
         "ราคาต่อรองทีมเหย้า (Home Handicap)",
         options=[-2.0, -1.75, -1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0],
-        index=6 # Default: -0.5
+        index=6
     )
 
-# --- คำนวณความน่าจะเป็นด้วย Poisson ---
+# --- คำนวณความน่าจะเป็น ---
 max_goals = 8
-home_probs = [poisson.pmf(i, home_xg) for i in range(max_goals)]
-away_probs = [poisson.pmf(i, away_xg) for i in range(max_goals)]
-
-# สร้าง Score Matrix
-score_matrix = np.outer(home_probs, away_probs)
+home_probs = [poisson_pmf(i, home_xg) for i in range(max_goals)]
+away_probs = [poisson_pmf(i, away_xg) for i in range(max_goals)]
 
 # คำนวณ Asian Handicap Outcome
 win_ah = 0.0
@@ -38,7 +37,7 @@ loss_ah = 0.0
 
 for h in range(max_goals):
     for a in range(max_goals):
-        p = score_matrix[h, a]
+        p = home_probs[h] * away_probs[a]
         diff = (h - a) + handicap
         
         if diff > 0.25:
@@ -70,8 +69,7 @@ with res_col3:
     if half_loss_ah > 0:
         st.metric("โอกาสเสียครึ่ง (Half Loss)", f"{half_loss_ah*100:.2f}%")
 
-# คำนวณ Fair Odds สำหรับราคาต่อรองนี้
-expected_return_prob = win_ah + (half_win_ah * 0.5) + (push_ah * 0.5) # ค่าความน่าจะเป็นปรับสมดุล
+expected_return_prob = win_ah + (half_win_ah * 0.5) + (push_ah * 0.5)
 fair_odds = 1 / expected_return_prob if expected_return_prob > 0 else 0
 
 st.success(f"💡 **Fair Odds (ราคาน้ำที่คุ้มค่าสำหรับทีมเหย้าที่ต่อ {handicap}):** {fair_odds:.2f}")
