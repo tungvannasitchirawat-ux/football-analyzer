@@ -7,7 +7,7 @@ from datetime import datetime
 st.set_page_config(page_title="Daily All Match Predictions", page_icon="⚽", layout="wide")
 
 st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลรวมทุกลีกประจำวัน")
-st.caption("รวมโปรแกรมแข่งทุกลีกทั่วโลก คำนวณความน่าจะเป็น สรุปฟันธงเลือกฝั่งให้อย่างชัดเจนทุกลีกในหน้าเดียว")
+st.caption("รวมโปรแกรมแข่งทุกลีกทั่วโลก แสดงราคาต่อรองสด ค่าน้ำ สรุปฟันธงเลือกฝั่งให้ครบทุกคู่ในหน้าเดียว")
 
 # --- 1. GLOBAL FIXTURES FETCHER ---
 @st.cache_data(ttl=1800)
@@ -129,7 +129,7 @@ st.sidebar.success(f"✅ โหลดสำเร็จทั้งหมด {le
 st.markdown(f"### 📅 รายการแข่งขันประจำวันที่ {selected_date_str} (แสดงทั้งหมด {len(display_matches)} คู่)")
 st.markdown("---")
 
-# --- LOOP แสดงผลแบบฟันธงเลือกฝั่ง 100% ---
+# --- LOOP แสดงผลแบบมีราคาต่อรอง + ฟันธงเลือกฝั่ง ---
 for idx, m in enumerate(display_matches):
     home = m["home"]
     away = m["away"]
@@ -140,40 +140,52 @@ for idx, m in enumerate(display_matches):
     
     res = calculate_analytics(h_xg, a_xg, hcap, tot)
     
-    # 📌 บังคับสรุปเลือกฝั่งต่อ/รอง (Asian Handicap)
+    # บังคับสรุปเลือกฝั่งต่อ/รอง
     if res['win'] >= res['loss']:
-        ah_rec = f"🔥 **เลือก: ต่อ {home}** (เรต {hcap})"
+        ah_rec = f"🔥 **เลือก: ต่อ {home}**"
     else:
         ah_rec = f"🛡️ **เลือก: รอง {away}**"
 
-    # 📌 บังคับสรุปเลือกฝั่งสูง/ต่ำ (Over/Under)
+    # บังคับสรุปเลือกฝั่งสูง/ต่ำ
     if res['expected_total_goals'] >= tot:
-        ou_rec = f"⚽ **เลือก: สกอร์สูง (OVER {tot})**"
+        ou_rec = f"⚽ **เลือก: สกอร์สูง (OVER)**"
     else:
-        ou_rec = f"🔒 **เลือก: สกอร์ต่ำ (UNDER {tot})**"
+        ou_rec = f"🔒 **เลือก: สกอร์ต่ำ (UNDER)**"
 
     with st.container():
-        c_info, c_ah, c_ou = st.columns([2, 1.5, 1.5])
+        c_info, c_odds, c_ah, c_ou = st.columns([2, 1.2, 1.4, 1.4])
         
+        # 1. รายชื่อทีมและลีก
         with c_info:
             st.markdown(f"#### 🏟️ [{m['time']}] {home} vs {away}")
             st.caption(f"{m['league']} | ค่า xG: `{h_xg}` vs `{a_xg}`")
             
+        # 2. ราคาต่อรองเปิดสด (Handicap & Over/Under)
+        with c_odds:
+            st.markdown("**🎯 ราคาต่อรองเปิด:**")
+            st.markdown(f"* ราคาต่อ: **`{hcap}`**")
+            st.markdown(f"* เรตสูง/ต่ำ: **`{tot}`**")
+
+        # 3. ฟันธงฝั่งต่อ/รอง
         with c_ah:
             st.markdown("**🛡️ สรุปฝั่งต่อ/รอง:**")
             st.markdown(ah_rec)
             
+        # 4. ฟันธงฝั่งสูง/ต่ำ
         with c_ou:
             st.markdown("**⚽ สรุปฝั่งสูง/ต่ำ:**")
             st.markdown(ou_rec)
             
+        # 5. รายละเอียดวิเคราะห์เจาะลึก
         with st.expander(f"🔍 กดเพื่อดูวิเคราะห์สถิติแบบละเอียด ({home} vs {away})"):
             col_det1, col_det2 = st.columns(2)
             with col_det1:
+                st.write(f"* **ราคาต่อรองของ {home}:** `{hcap}`")
                 st.write(f"* **โอกาสชนะราคาฝั่งต่อ ({home}):** {res['win']:.2f}%")
                 st.write(f"* **โอกาสรอดราคาฝั่งรอง ({away}):** {res['loss']:.2f}%")
                 st.write(f"* **ค่าน้ำต่อรองที่คุ้มเสี่ยง (Fair Odds):** `{res['fair_odds_ah']:.2f}`")
             with col_det2:
+                st.write(f"* **เรตสูง/ต่ำเปิดที่:** `{tot}` ลูก")
                 st.write(f"* **คาดการณ์ประตูรวม:** {res['expected_total_goals']:.2f} ลูก")
                 st.write(f"* **โอกาสสูง (Over {tot}):** {res['over_prob']:.2f}% | **โอกาสต่ำ:** {res['under_prob']:.2f}%")
 
