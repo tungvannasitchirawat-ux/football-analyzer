@@ -7,11 +7,21 @@ from datetime import datetime
 st.set_page_config(page_title="ตารางวิเคราะห์บอล 500+ คู่ทั่วโลก", page_icon="⚽", layout="wide")
 
 st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทุกลีกทั่วโลก (ภาษาไทย)")
-st.caption("ดึงโปรแกรมแข่งขัน 500+ คู่ต่อวัน แปลชื่อทีมและลีกเป็นภาษาไทยอัตโนมัติ พร้อมระบบฟันธงเลือกฝั่ง")
+st.caption("รวมโปรแกรมแข่งขัน 500+ คู่ต่อวัน (เพิ่ม J1, J2, K1, K2 เรียบร้อย) แปลชื่อภาษาไทย พร้อมระบบฟันธงเลือกฝั่ง")
 
-# --- Dictionary สำหรับแปลงชื่อลีกและชื่อประเทศเป็นภาษาไทย ---
+# --- Dictionary แปลชื่อลีกและทีมเป็นภาษาไทย ---
 TRANSLATION_MAP = {
-    # ลีกยอดนิยม
+    # ลีกญี่ปุ่น & เกาหลีใต้ (เพิ่มใหม่)
+    "Japanese J1 League": "เจลีก 1 ญี่ปุ่น",
+    "Japanese J2 League": "เจลีก 2 ญี่ปุ่น",
+    "J.League": "เจลีก 1 ญี่ปุ่น",
+    "J2 League": "เจลีก 2 ญี่ปุ่น",
+    "Korean K League 1": "เคลีก 1 เกาหลีใต้",
+    "Korean K League 2": "เคลีก 2 เกาหลีใต้",
+    "K League 1": "เคลีก 1 เกาหลีใต้",
+    "K League 2": "เคลีก 2 เกาหลีใต้",
+    
+    # ลีกยอดนิยมอื่นๆ
     "English Premier League": "พรีเมียร์ลีก อังกฤษ",
     "Premier League": "พรีเมียร์ลีก อังกฤษ",
     "Spanish LaLiga": "ลาลีกา สเปน",
@@ -20,49 +30,38 @@ TRANSLATION_MAP = {
     "Italian Serie A": "เซเรียอา อิตาลี",
     "French Ligue 1": "ลีกเอิง ฝรั่งเศส",
     "Thai League 1": "ไทยลีก 1",
-    "Thai League": "ไทยลีก",
+    "Thai League 2": "ไทยลีก 2",
     "Australian A-League": "เอลีก ออสเตรเลีย",
-    "Japanese J1 League": "เจลีก 1 ญี่ปุ่น",
-    "Korean K League 1": "เคลีก 1 เกาหลีใต้",
     "UEFA Champions League": "ยูฟ่า แชมเปียนส์ลีก",
     "UEFA Europa League": "ยูฟ่า ยูโรปาลีก",
-    "UEFA Conference League": "ยูฟ่า คอนเฟอเรนซ์ลีก",
     "English Championship": "เอฟแอล แชมเปียนชิป อังกฤษ",
-    "German 2. Bundesliga": "บุนเดสลีกา 2 เยอรมนี",
-    "French Ligue 2": "ลีกเดอช ฝรั่งเศส",
     
-    # ชื่อทีมยอดนิยม
-    "Manchester United": "แมนเชสเตอร์ ยูไนเต็ด",
-    "Manchester City": "แมนเชสเตอร์ ซิตี้",
-    "Liverpool": "ลิเวอร์พูล",
-    "Arsenal": "อาร์เซน่อล",
-    "Chelsea": "เชลซี",
-    "Tottenham Hotspur": "ท็อตแน่ม ฮ็อทสเปอร์",
-    "Real Madrid": "เรอัล มาดริด",
-    "Barcelona": "บาร์เซโลน่า",
-    "Atletico Madrid": "แอตเลติโก มาดริด",
-    "Bayern Munich": "บาเยิร์น มิวนิค",
-    "Borussia Dortmund": "โบรุสเซีย ดอร์ทมุนด์",
-    "Paris Saint-Germain": "ปารีส แซงต์-แชร์กแมง",
-    "Juventus": "ยูเวนตุส",
-    "Inter Milan": "อินเตอร์ มิลาน",
-    "AC Milan": "เอซี มิลาน",
-    "Buriram United": "บุรีรัมย์ ยูไนเต็ด",
-    "BG Pathum United": "บีจี ปทุม ยูไนเต็ด",
-    "Port FC": "การท่าเรือ เอฟซี",
-    "Bangkok United": "ทรู แบงค็อก ยูไนเต็ด",
-    "Muangthong United": "เมืองทอง ยูไนเต็ด"
+    # ทีมญี่ปุ่น & เกาหลีใต้ ยอดนิยม
+    "Kawasaki Frontale": "คาวาซากิ ฟรอนตาเล่",
+    "Yokohama F. Marinos": "โยโกฮาม่า เอฟ มารินอส",
+    "Urawa Red Diamonds": "อูราวะ เรด ไดมอนส์",
+    "Kashima Antlers": "คาชิม่า แอนท์เลอร์ส",
+    "Vissel Kobe": "วิสเซล โกเบ",
+    "Nagoya Grampus": "นาโกย่า แกรมปัส",
+    "Gamba Osaka": "กัมบะ โอซาก้า",
+    "Cerezo Osaka": "เซเรโซ โอซาก้า",
+    "Sanfrecce Hiroshima": "ซานเฟรซเซ ฮิโรชิม่า",
+    "Tokyo Verdy": "โตเกียว เวอร์ดี้",
+    "Kashiwa Reysol": "คาชิว่า เรย์โซล",
+    "Jeonbuk Hyundai Motors": "ชอนบุก ฮุนได มอเตอร์ส",
+    "Ulsan HD": "อุลซาน ฮุนได",
+    "FC Seoul": "เอฟซี โซล",
+    "Pohang Steelers": "โพฮัง สตีลเลอร์ส",
+    "Suwon Samsung Bluewings": "ซูวอน ซัมซุง บลูวิงส์"
 }
 
 def translate_to_thai(text):
     """ ฟังก์ชันช่วยแปลชื่อลีก/ชื่อทีมเป็นภาษาไทย """
     if not text:
         return text
-    # หากมีคำแปลใน Dictionary ให้ใช้ภาษาไทย
     if text in TRANSLATION_MAP:
         return TRANSLATION_MAP[text]
     
-    # กรณีชื่อลีกอื่นๆ แปลคำศัพท์หลัก
     translated = text
     replacements = {
         "League": "ลีก",
@@ -78,17 +77,18 @@ def translate_to_thai(text):
         
     return translated
 
-# --- 1. MULTI-LEAGUE FETCHER (THAI LANGUAGE) ---
+# --- 1. MULTI-LEAGUE FETCHER (INCLUDES J1, J2, K1, K2) ---
 @st.cache_data(ttl=1800)
 def fetch_500plus_thai_matches(target_date_str):
     """
-    ดึงตารางแข่งขัน 500+ คู่ แปลชื่อทีมและลีกเป็นภาษาไทย
+    ดึงตารางแข่งขันรวมเจลีก 1-2 และ เคลีก 1-2 พร้อมแปลเป็นภาษาไทย
     """
+    # ระบุ slug ลีก โดยเพิ่ม jpn.1, jpn.2 (เจลีก 1-2) และ kor.1, kor.2 (เคลีก 1-2)
     league_slugs = [
-        "all", "eng.1", "eng.2", "eng.3", "eng.4", "esp.1", "esp.2", "ita.1", "ita.2", 
-        "ger.1", "ger.2", "fra.1", "fra.2", "aus.1", "tha.1", "jpn.1", "kor.1", 
-        "ned.1", "por.1", "bel.1", "tur.1", "sco.1", "arg.1", "bra.1", "usa.1",
-        "uefa.champions", "uefa.europa", "uefa.ec", "fifa.world"
+        "all", "jpn.1", "jpn.2", "kor.1", "kor.2", "tha.1", "tha.2", 
+        "eng.1", "eng.2", "eng.3", "eng.4", "esp.1", "esp.2", "ita.1", "ita.2", 
+        "ger.1", "ger.2", "fra.1", "fra.2", "aus.1", "ned.1", "por.1", "bel.1", 
+        "tur.1", "sco.1", "arg.1", "bra.1", "usa.1", "uefa.champions", "uefa.europa"
     ]
     
     all_matches = []
@@ -123,7 +123,7 @@ def fetch_500plus_thai_matches(target_date_str):
                     date_full = comp.get("date", "")
                     time_str = date_full[11:16] if len(date_full) >= 16 else "--:--"
                     
-                    # แปลเป็นภาษาไทย
+                    # แปลภาษาไทย
                     th_league = translate_to_thai(raw_league)
                     th_home = translate_to_thai(raw_home)
                     th_away = translate_to_thai(raw_away)
@@ -183,24 +183,23 @@ def calculate_analytics(home_xg, away_xg, handicap, target_total=2.5, max_goals=
     }
 
 # --- 3. UI DASHBOARD & FILTERS ---
-st.sidebar.header("⚙️ ตัวกรองภาษาไทย")
+st.sidebar.header("⚙️ ตัวกรองโปรแกรมแข่ง")
 
 selected_date_obj = st.sidebar.date_input("📅 เลือกวันที่เตะ:", datetime.now())
 selected_date_str = selected_date_obj.strftime("%Y-%m-%d")
 
-with st.spinner(f"🤖 กำลังดึงและแปลโปรแกรมแข่งขันประจำวันที่ {selected_date_str}..."):
+with st.spinner(f"🤖 กำลังดึงแมตช์การแข่งขัน (รวม J1-J2, K1-K2) ประจำวันที่ {selected_date_str}..."):
     matches = fetch_500plus_thai_matches(selected_date_str)
 
-st.sidebar.success(f"✅ โหลดและแปลภาษาไทยสำเร็จ {len(matches)} คู่!")
+st.sidebar.success(f"✅ โหลดสำเร็จ {len(matches)} คู่ทั่วโลก!")
 
-# ช่องค้นหาชื่อทีมภาษาไทย / ภาษาอังกฤษ
+# ช่องค้นหาชื่อทีม/ลีก
 search_kw = st.sidebar.text_input("🔍 ค้นหาชื่อทีม หรือ ชื่อลีก (พิมพ์ภาษาไทยได้):", "").strip().lower()
 
-# Dropdown กรองตามลีก
+# Dropdown กรองตามลีก (จะมี เจลีก 1-2 และ เคลีก 1-2 ปรากฏขึ้นมาด้วย)
 all_leagues = sorted(list(set([m["league"] for m in matches])))
 selected_league = st.sidebar.selectbox("🏆 กรองเฉพาะลีกที่ต้องการ:", ["-- แสดงทุกลีก --"] + all_leagues)
 
-# กรองข้อมูล
 display_matches = matches
 
 if selected_league != "-- แสดงทุกลีก --":
@@ -215,7 +214,7 @@ if search_kw:
 st.markdown(f"### 📅 รายการแข่งขันประจำวันที่ {selected_date_str} (แสดง {len(display_matches)} / {len(matches)} คู่)")
 st.markdown("---")
 
-# --- LOOP DISPLAY MATCHES IN THAI ---
+# --- LOOP DISPLAY MATCHES ---
 for idx, m in enumerate(display_matches):
     home = m["home"]
     away = m["away"]
@@ -225,12 +224,12 @@ for idx, m in enumerate(display_matches):
     with st.container():
         c_info, c_odds_input, c_ah_rec, c_ou_rec = st.columns([2.0, 1.5, 1.4, 1.4])
         
-        # 1. ข้อมูลแมตช์ภาษาไทย
+        # 1. ข้อมูลคู่แข่ง
         with c_info:
             st.markdown(f"#### 🏟️ [{m['time']}] {home} vs {away}")
             st.caption(f"{m['league']} | ค่า xG: `{h_xg}` vs `{a_xg}`")
             
-        # 2. ปรับเปลี่ยนราคาต่อรองสด
+        # 2. ตัวปรับราคาต่อรอง
         with c_odds_input:
             st.markdown("**🎯 ราคาเปิดหน้ากระดาน:**")
             hcap = st.number_input(f"ต่อรอง ({home}):", value=-0.5, step=0.25, key=f"hcap_{idx}_{m['id']}")
@@ -261,7 +260,7 @@ for idx, m in enumerate(display_matches):
             st.markdown("**⚽ ฟันธง สูง/ต่ำ:**")
             st.markdown(ou_rec)
 
-        # รายละเอียดสถิติภาษาไทย
+        # รายละเอียดสถิติเจาะลึก
         with st.expander(f"🔍 ดูสถิติและความน่าจะเป็นแบบละเอียด ({home} vs {away})"):
             c1, c2 = st.columns(2)
             with c1:
