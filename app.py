@@ -4,72 +4,71 @@ import math
 from datetime import datetime
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Global 1000+ Match Analytics", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Global 500+ Match Analytics", page_icon="⚽", layout="wide")
 
-st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทั่วโลก (รองรับ 1,000+ คู่/วัน)")
-st.caption("ดึงโปรแกรมแข่งขันจริงทุกลีกทั่วโลกอัตโนมัติ โดยไม่ต้องใช้ API Key พร้อมระบบฟันธงและช่องค้นหาคู่แข่ง")
+st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทั่วโลก (รองรับ 500+ คู่/วัน)")
+st.caption("ระบบดึงตารางการแข่งขันครอบคลุมทุกลีกทั่วโลกโดยไม่ต้องใช้ API Key พร้อมระบบฟันธงและค้นหาแมตช์")
 
-# --- 1. FETCH 1000+ GLOBAL MATCHES (NO API KEY) ---
-@st.cache_data(ttl=1800)  # Refresh ทุก 30 นาที
-def fetch_huge_global_matches(target_date_str):
+# --- 1. MULTI-LEAGUE FETCHER (NO API KEY - 500+ MATCHES) ---
+@st.cache_data(ttl=1800)
+def fetch_500plus_global_matches(target_date_str):
     """
-    ดึงตารางการแข่งขันฟุตบอลจริงขนาดใหญ่ทุกลีกทั่วโลก (รองรับระดับ 1,000+ คู่)
+    ดึงข้อมูลโปรแกรมแข่งขันรายลีกจากทั่วโลกเพื่อรวบรวมให้ได้ 500+ คู่ต่อวัน
     """
-    matches = []
-    # ยิงดึง Feed รวมการแข่งขันฟุตบอลสาธารณะทั่วโลก
-    url = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard"
-    params = {
-        "dates": target_date_str.replace("-", ""),
-        "limit": 1000  # ดึงข้อมูลแมตช์สูงสุด 1,000+ คู่
-    }
+    # รายชื่อลีกหลัก ลีกรอง และลีกภูมิภาคทั่วโลก
+    league_slugs = [
+        "all", "eng.1", "eng.2", "eng.3", "eng.4", "esp.1", "esp.2", "ita.1", "ita.2", 
+        "ger.1", "ger.2", "fra.1", "fra.2", "aus.1", "tha.1", "jpn.1", "kor.1", 
+        "ned.1", "por.1", "bel.1", "tur.1", "sco.1", "arg.1", "bra.1", "usa.1",
+        "uefa.champions", "uefa.europa", "uefa.ec", "fifa.world"
+    ]
     
-    try:
-        res = requests.get(url, params=params, timeout=12)
-        if res.status_code == 200:
-            data = res.json()
-            events = data.get("events", [])
-            
-            for ev in events:
-                comp = ev.get("competitions", [{}])[0]
-                league_name = comp.get("league", {}).get("name") or ev.get("season", {}).get("slug", "Soccer League")
-                competitors = comp.get("competitors", [])
-                
-                home_team = "Home"
-                away_team = "Away"
-                
-                for team in competitors:
-                    if team.get("homeAway") == "home":
-                        home_team = team.get("team", {}).get("displayName", "Home")
-                    else:
-                        away_team = team.get("team", {}).get("displayName", "Away")
-                        
-                date_full = comp.get("date", "")
-                time_str = date_full[11:16] if len(date_full) >= 16 else "--:--"
-                
-                matches.append({
-                    "league": f"🏆 {league_name.title()}",
-                    "home": home_team,
-                    "away": away_team,
-                    "time": time_str,
-                    "home_xg": 1.65,
-                    "away_xg": 1.15
-                })
-    except Exception:
-        pass
+    all_matches = []
+    seen_match_keys = set()
+    date_formatted = target_date_str.replace("-", "")
 
-    # ระบบแมตช์สำรองกรณีวันดังกล่าวไม่มีโปรแกรมเตะ
-    if not matches:
-        matches = [
-            {"league": "🏆 Australia NPL NSW", "home": "Sydney FC Youth", "away": "St George City FA", "time": "16:30", "home_xg": 1.70, "away_xg": 1.30},
-            {"league": "🏆 Australia NPL NSW", "home": "Blacktown City", "away": "Manly United", "time": "18:00", "home_xg": 2.10, "away_xg": 0.95},
-            {"league": "🏆 Thai League 1", "home": "Buriram United", "away": "BG Pathum United", "time": "19:00", "home_xg": 1.80, "away_xg": 1.25},
-            {"league": "🏆 German Bundesliga", "home": "Bayern Munich", "away": "Borussia Dortmund", "time": "20:30", "home_xg": 2.40, "away_xg": 1.30},
-            {"league": "🏆 English Premier League", "home": "Liverpool FC", "away": "AFC Bournemouth", "time": "21:00", "home_xg": 2.25, "away_xg": 0.85},
-            {"league": "🏆 English Premier League", "home": "Arsenal", "away": "Chelsea", "time": "23:30", "home_xg": 1.90, "away_xg": 1.10},
-            {"league": "🏆 Spanish La Liga", "home": "Real Madrid", "away": "Barcelona", "time": "02:00", "home_xg": 1.75, "away_xg": 1.60}
-        ]
+    for slug in league_slugs:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
+        params = {"dates": date_formatted, "limit": 300}
+        
+        try:
+            res = requests.get(url, params=params, timeout=5)
+            if res.status_code == 200:
+                events = res.json().get("events", [])
+                for ev in events:
+                    match_id = ev.get("id")
+                    if match_id in seen_match_keys:
+                        continue
+                    
+                    comp = ev.get("competitions", [{}])[0]
+                    league_name = comp.get("league", {}).get("name") or ev.get("season", {}).get("slug", "Soccer League")
+                    competitors = comp.get("competitors", [])
+                    
+                    home_team = "Home"
+                    away_team = "Away"
+                    for team in competitors:
+                        if team.get("homeAway") == "home":
+                            home_team = team.get("team", {}).get("displayName", "Home")
+                        else:
+                            away_team = team.get("team", {}).get("displayName", "Away")
+                            
+                    date_full = comp.get("date", "")
+                    time_str = date_full[11:16] if len(date_full) >= 16 else "--:--"
+                    
+                    all_matches.append({
+                        "id": match_id,
+                        "league": f"🏆 {league_name.title()}",
+                        "home": home_team,
+                        "away": away_team,
+                        "time": time_str,
+                        "home_xg": 1.65,
+                        "away_xg": 1.15
+                    })
+                    seen_match_keys.add(match_id)
+        except Exception:
+            continue
 
-    return matches
+    return all_matches
 
 # --- 2. MATH CALCULATIONS ---
 def poisson_pmf(k, lambda_val):
@@ -116,19 +115,19 @@ st.sidebar.header("⚙️ ตัวกรองโปรแกรมแข่ง
 selected_date_obj = st.sidebar.date_input("📅 เลือกวันที่เตะ:", datetime.now())
 selected_date_str = selected_date_obj.strftime("%Y-%m-%d")
 
-with st.spinner(f"🤖 กำลังดึงโปรแกรมแข่งขันประจำวันที่ {selected_date_str}..."):
-    matches = fetch_huge_global_matches(selected_date_str)
+with st.spinner(f"🤖 กำลังดึงแมตช์การแข่งขันจากทุกลีกทั่วโลกประจำวันที่ {selected_date_str}..."):
+    matches = fetch_500plus_global_matches(selected_date_str)
 
 st.sidebar.success(f"✅ ดึงโปรแกรมสำเร็จ {len(matches)} คู่ทั่วโลก!")
 
-# ช่องค้นหาชื่อทีม / ค้นหาลีก (Search Box)
+# ช่องค้นหาชื่อทีม / ชื่อลีก
 search_kw = st.sidebar.text_input("🔍 ค้นหาชื่อทีม หรือ ชื่อลีก:", "").strip().lower()
 
 # Dropdown กรองตามลีก
 all_leagues = sorted(list(set([m["league"] for m in matches])))
 selected_league = st.sidebar.selectbox("🏆 กรองเฉพาะลีกที่ต้องการ:", ["-- แสดงทุกลีก --"] + all_leagues)
 
-# กรองข้อมูลตามเงื่อนไข
+# กรองข้อมูล
 display_matches = matches
 
 if selected_league != "-- แสดงทุกลีก --":
@@ -140,10 +139,10 @@ if search_kw:
         if search_kw in m["home"].lower() or search_kw in m["away"].lower() or search_kw in m["league"].lower()
     ]
 
-st.markdown(f"### 📅 ตารางรายการแข่งขันประจำวันที่ {selected_date_str} (แสดง {len(display_matches)} / {len(matches)} คู่)")
+st.markdown(f"### 📅 รายการแข่งขันประจำวันที่ {selected_date_str} (แสดง {len(display_matches)} / {len(matches)} คู่)")
 st.markdown("---")
 
-# --- LOOP DISPLAY MATCHES (FAST RENDERING) ---
+# --- LOOP DISPLAY MATCHES ---
 for idx, m in enumerate(display_matches):
     home = m["home"]
     away = m["away"]
@@ -153,27 +152,27 @@ for idx, m in enumerate(display_matches):
     with st.container():
         c_info, c_odds_input, c_ah_rec, c_ou_rec = st.columns([2.0, 1.5, 1.4, 1.4])
         
-        # 1. รายชื่อคู่แข่งและเวลาเตะ
+        # 1. ข้อมูลแมตช์
         with c_info:
             st.markdown(f"#### 🏟️ [{m['time']}] {home} vs {away}")
             st.caption(f"{m['league']} | ค่า xG: `{h_xg}` vs `{a_xg}`")
             
-        # 2. ปรับเปลี่ยนราคาต่อรองสดได้ตามต้องการ
+        # 2. ตัวปรับเรตราคาต่อรอง
         with c_odds_input:
             st.markdown("**🎯 ราคาเปิดหน้ากระดาน:**")
-            hcap = st.number_input(f"ต่อรอง ({home}):", value=-0.5, step=0.25, key=f"hcap_{idx}_{m['home']}")
-            tot = st.number_input(f"เรตสูง/ต่ำ:", value=2.5, step=0.25, key=f"tot_{idx}_{m['away']}")
+            hcap = st.number_input(f"ต่อรอง ({home}):", value=-0.5, step=0.25, key=f"hcap_{idx}_{m['id']}")
+            tot = st.number_input(f"เรตสูง/ต่ำ:", value=2.5, step=0.25, key=f"tot_{idx}_{m['id']}")
 
         # คำนวณความน่าจะเป็น
         res = calculate_analytics(h_xg, a_xg, hcap, tot)
 
-        # บังคับสรุปเลือกฝั่งต่อ/รอง
+        # ฟันธงเลือกฝั่งต่อ/รอง
         if res['win'] >= res['loss']:
             ah_rec = f"🔥 **เลือก: ต่อ {home}**"
         else:
             ah_rec = f"🛡️ **เลือก: รอง {away}**"
 
-        # บังคับสรุปเลือกฝั่งสูง/ต่ำ
+        # ฟันธงเลือกฝั่งสูง/ต่ำ
         if res['expected_total_goals'] >= tot:
             ou_rec = f"⚽ **เลือก: สกอร์สูง (OVER)**"
         else:
