@@ -35,7 +35,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-BASE_URL = "https://v3.sportmonks.com/api/v3/football"
+BASE_URL = "https://api.sportmonks.com/v3/football"
 
 # ==========================================
 # 2. HELPER & API FUNCTIONS
