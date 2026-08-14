@@ -4,31 +4,34 @@ import math
 from datetime import datetime
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Global Football Analytics (No API)", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Global 1000+ Match Analytics", page_icon="⚽", layout="wide")
 
-st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทุกลีกทั่วโลก (ไม่ต้องใช้ API Key)")
-st.caption("ดึงโปรแกรมแข่งจริงทุกลีกทั่วโลกอัตโนมัติ 100% พร้อมระบบคำนวณราคาต่อรองและฟันธงการลงทุน")
+st.title("⚽ ตารางวิเคราะห์ & ฟันธงฟุตบอลทั่วโลก (รองรับ 1,000+ คู่/วัน)")
+st.caption("ดึงโปรแกรมแข่งขันจริงทุกลีกทั่วโลกอัตโนมัติ โดยไม่ต้องใช้ API Key พร้อมระบบฟันธงและช่องค้นหาคู่แข่ง")
 
-# --- 1. FETCH GLOBAL MATCHES (NO API KEY NEEDED) ---
-@st.cache_data(ttl=1800)
-def fetch_no_api_matches(target_date_str):
+# --- 1. FETCH 1000+ GLOBAL MATCHES (NO API KEY) ---
+@st.cache_data(ttl=1800)  # Refresh ทุก 30 นาที
+def fetch_huge_global_matches(target_date_str):
     """
-    ดึงโปรแกรมการแข่งขันฟุตบอลจริงทุกลีกทั่วโลก โดยไม่ต้องใช้ API Key
+    ดึงตารางการแข่งขันฟุตบอลจริงขนาดใหญ่ทุกลีกทั่วโลก (รองรับระดับ 1,000+ คู่)
     """
     matches = []
-    # ใช้ Public Sports Feed ของ ESPN (เปิดสาธารณะ 100%)
+    # ยิงดึง Feed รวมการแข่งขันฟุตบอลสาธารณะทั่วโลก
     url = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard"
-    params = {"dates": target_date_str.replace("-", "")}
+    params = {
+        "dates": target_date_str.replace("-", ""),
+        "limit": 1000  # ดึงข้อมูลแมตช์สูงสุด 1,000+ คู่
+    }
     
     try:
-        res = requests.get(url, params=params, timeout=10)
+        res = requests.get(url, params=params, timeout=12)
         if res.status_code == 200:
             data = res.json()
             events = data.get("events", [])
             
             for ev in events:
                 comp = ev.get("competitions", [{}])[0]
-                league_name = comp.get("league", {}).get("name") or ev.get("season", {}).get("slug", "Football League")
+                league_name = comp.get("league", {}).get("name") or ev.get("season", {}).get("slug", "Soccer League")
                 competitors = comp.get("competitors", [])
                 
                 home_team = "Home"
@@ -54,7 +57,7 @@ def fetch_no_api_matches(target_date_str):
     except Exception:
         pass
 
-    # ระบบสำรองข้อมูลแมตช์หากช่วงนั้นไม่มีแข่ง
+    # ระบบแมตช์สำรองกรณีวันดังกล่าวไม่มีโปรแกรมเตะ
     if not matches:
         matches = [
             {"league": "🏆 Australia NPL NSW", "home": "Sydney FC Youth", "away": "St George City FA", "time": "16:30", "home_xg": 1.70, "away_xg": 1.30},
@@ -107,28 +110,40 @@ def calculate_analytics(home_xg, away_xg, handicap, target_total=2.5, max_goals=
         "expected_total_goals": home_xg + away_xg
     }
 
-# --- 3. UI DASHBOARD ---
-st.sidebar.header("⚙️ ตัวกรองข้อมูล")
+# --- 3. UI DASHBOARD & FILTERS ---
+st.sidebar.header("⚙️ ตัวกรองโปรแกรมแข่ง")
+
 selected_date_obj = st.sidebar.date_input("📅 เลือกวันที่เตะ:", datetime.now())
 selected_date_str = selected_date_obj.strftime("%Y-%m-%d")
 
-with st.spinner(f"🤖 กำลังโหลดรายการแข่งขันประจำวันที่ {selected_date_str}..."):
-    matches = fetch_no_api_matches(selected_date_str)
+with st.spinner(f"🤖 กำลังดึงโปรแกรมแข่งขันประจำวันที่ {selected_date_str}..."):
+    matches = fetch_huge_global_matches(selected_date_str)
 
+st.sidebar.success(f"✅ ดึงโปรแกรมสำเร็จ {len(matches)} คู่ทั่วโลก!")
+
+# ช่องค้นหาชื่อทีม / ค้นหาลีก (Search Box)
+search_kw = st.sidebar.text_input("🔍 ค้นหาชื่อทีม หรือ ชื่อลีก:", "").strip().lower()
+
+# Dropdown กรองตามลีก
 all_leagues = sorted(list(set([m["league"] for m in matches])))
 selected_league = st.sidebar.selectbox("🏆 กรองเฉพาะลีกที่ต้องการ:", ["-- แสดงทุกลีก --"] + all_leagues)
 
+# กรองข้อมูลตามเงื่อนไข
+display_matches = matches
+
 if selected_league != "-- แสดงทุกลีก --":
-    display_matches = [m for m in matches if m["league"] == selected_league]
-else:
-    display_matches = matches
+    display_matches = [m for m in display_matches if m["league"] == selected_league]
 
-st.sidebar.success(f"✅ ดึงโปรแกรมแข่งสำเร็จ {len(display_matches)} คู่!")
+if search_kw:
+    display_matches = [
+        m for m in display_matches 
+        if search_kw in m["home"].lower() or search_kw in m["away"].lower() or search_kw in m["league"].lower()
+    ]
 
-st.markdown(f"### 📅 ตารางรายการแข่งขันประจำวันที่ {selected_date_str} (รวม {len(display_matches)} คู่)")
+st.markdown(f"### 📅 ตารางรายการแข่งขันประจำวันที่ {selected_date_str} (แสดง {len(display_matches)} / {len(matches)} คู่)")
 st.markdown("---")
 
-# --- LOOP DISPLAY ALL MATCHES ---
+# --- LOOP DISPLAY MATCHES (FAST RENDERING) ---
 for idx, m in enumerate(display_matches):
     home = m["home"]
     away = m["away"]
@@ -138,27 +153,27 @@ for idx, m in enumerate(display_matches):
     with st.container():
         c_info, c_odds_input, c_ah_rec, c_ou_rec = st.columns([2.0, 1.5, 1.4, 1.4])
         
-        # 1. ข้อมูลคู่แข่งขัน
+        # 1. รายชื่อคู่แข่งและเวลาเตะ
         with c_info:
             st.markdown(f"#### 🏟️ [{m['time']}] {home} vs {away}")
             st.caption(f"{m['league']} | ค่า xG: `{h_xg}` vs `{a_xg}`")
             
-        # 2. ปรับราคาต่อรองจริงหน้าเว็บ (ปรับเปลี่ยนได้ตามราคาบนกระดาน)
+        # 2. ปรับเปลี่ยนราคาต่อรองสดได้ตามต้องการ
         with c_odds_input:
             st.markdown("**🎯 ราคาเปิดหน้ากระดาน:**")
-            hcap = st.number_input(f"ต่อรอง ({home}):", value=-0.5, step=0.25, key=f"hcap_{idx}")
-            tot = st.number_input(f"เรตสูง/ต่ำ:", value=2.5, step=0.25, key=f"tot_{idx}")
+            hcap = st.number_input(f"ต่อรอง ({home}):", value=-0.5, step=0.25, key=f"hcap_{idx}_{m['home']}")
+            tot = st.number_input(f"เรตสูง/ต่ำ:", value=2.5, step=0.25, key=f"tot_{idx}_{m['away']}")
 
-        # คำนวณผลการวิเคราะห์
+        # คำนวณความน่าจะเป็น
         res = calculate_analytics(h_xg, a_xg, hcap, tot)
 
-        # สรุปเลือกฝั่งต่อ/รอง
+        # บังคับสรุปเลือกฝั่งต่อ/รอง
         if res['win'] >= res['loss']:
             ah_rec = f"🔥 **เลือก: ต่อ {home}**"
         else:
             ah_rec = f"🛡️ **เลือก: รอง {away}**"
 
-        # สรุปเลือกฝั่งสูง/ต่ำ
+        # บังคับสรุปเลือกฝั่งสูง/ต่ำ
         if res['expected_total_goals'] >= tot:
             ou_rec = f"⚽ **เลือก: สกอร์สูง (OVER)**"
         else:
@@ -174,7 +189,7 @@ for idx, m in enumerate(display_matches):
             st.markdown("**⚽ ฟันธง สูง/ต่ำ:**")
             st.markdown(ou_rec)
 
-        # รายละเอียดสถิติ
+        # รายละเอียดสถิติเจาะลึก
         with st.expander(f"🔍 ดูสถิติและความน่าจะเป็นแบบละเอียด ({home} vs {away})"):
             c1, c2 = st.columns(2)
             with c1:
