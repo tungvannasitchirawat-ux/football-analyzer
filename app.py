@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS เพิ่มความสวยงามและอ่านง่าย
+# Custom CSS
 st.markdown("""
     <style>
     .main-header {
@@ -26,29 +26,24 @@ st.markdown("""
         color: #666;
         margin-bottom: 20px;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 15px;
-        border-left: 5px solid #1E88E5;
-    }
     </style>
 """, unsafe_allow_html=True)
 
+# Endpoint มาตรฐานที่ถูกต้องของ Sportmonks API v3
 BASE_URL = "https://api.sportmonks.com/v3/football"
 
 # ==========================================
 # 2. HELPER & API FUNCTIONS
 # ==========================================
 def get_api_key():
-    """ ดึง API Key จาก Streamlit Secrets หรือจาก Sidebar """
+    """ ดึง API Key จาก Streamlit Secrets หรือ Sidebar """
     if "SPORTMONKS_API_KEY" in st.secrets:
         return st.secrets["SPORTMONKS_API_KEY"]
     return st.sidebar.text_input("🔑 ใส่ Sportmonks API Key:", type="password")
 
-@st.cache_data(ttl=1800)  # Cache ข้อมูลไว้ 30 นาทีเพื่อประหยัด API Quota
+@st.cache_data(ttl=1800)
 def fetch_sportmonks_data(endpoint: str, api_key: str, params: dict = None):
-    """ ดึงข้อมูลจาก Sportmonks API v3 พร้อมการจัดการ Error Handling """
+    """ ฟังก์ชันกลางสำหรับดึงข้อมูล API """
     if not api_key:
         return None, "กรุณากรอก API Key"
     
@@ -58,23 +53,23 @@ def fetch_sportmonks_data(endpoint: str, api_key: str, params: dict = None):
         default_params.update(params)
         
     try:
-        response = requests.get(url, params=default_params, timeout=12)
+        response = requests.get(url, params=default_params, timeout=15)
         response.raise_for_status()
         data = response.json()
         return data.get("data", []), None
     except requests.exceptions.HTTPError as err:
-        return None, f"HTTP Error: {err.response.status_code} ({err.response.reason})"
+        return None, f"HTTP Error {err.response.status_code}: โปรดตรวจสอบ API Key หรือสิทธิ์ของแผนการใช้งาน"
     except requests.exceptions.RequestException as e:
         return None, f"Connection Error: {str(e)}"
 
 def poisson_pmf(k: int, lambda_val: float) -> float:
-    """ คำนวณ Poisson Distribution PMF ด้วย math library """
+    """ คำนวณความน่าจะเป็นของประตูด้วย Poisson Distribution """
     if lambda_val <= 0:
         return 0.0
     return (math.pow(lambda_val, k) * math.exp(-lambda_val)) / math.factorial(k)
 
 def calculate_ah_outcomes(home_xg: float, away_xg: float, handicap: float, max_goals: int = 8):
-    """ คำนวณความน่าจะเป็นของ Asian Handicap ทั้งหมด """
+    """ คำนวณความน่าจะเป็นและ Fair Odds ของ Asian Handicap """
     home_probs = [poisson_pmf(i, home_xg) for i in range(max_goals)]
     away_probs = [poisson_pmf(i, away_xg) for i in range(max_goals)]
     
@@ -112,33 +107,34 @@ def calculate_ah_outcomes(home_xg: float, away_xg: float, handicap: float, max_g
 # 3. MAIN APPLICATION UI
 # ==========================================
 st.markdown('<p class="main-header">⚽ Football Analytics & Asian Handicap Engine</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">ระบบคำนวณความน่าจะเป็นและ Fair Odds จากสถิติ xG (Sportmonks API Connected)</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">ระบบคำนวณความน่าจะเป็นและ Fair Odds จากสถิติ xG (Sportmonks API v3 Connected)</p>', unsafe_allow_html=True)
 
 api_key = get_api_key()
 
 if not api_key:
-    st.info("💡 กรุณากรอก **Sportmonks API Key** ในเมนูด้านซ้าย (Sidebar) หรือตั้งค่าใน Streamlit Secrets เพื่อเริ่มวิเคราะห์")
+    st.info("💡 กรุณากรอก **Sportmonks API Key** ใน Secrets หรือในแถบเมนูด้านซ้ายเพื่อเริ่มใช้งาน")
     st.stop()
 
 # --- SIDEBAR: MATCH SELECTOR ---
 st.sidebar.header("⚙️ ตัวเลือกการวิเคราะห์")
 
 with st.sidebar:
-    with st.spinner("กำลังโหลดรายการแข่งขัน..."):
+    with st.spinner("กำลังเชื่อมต่อตารางการแข่งขัน..."):
+        # เรียกดูข้อมูลรายการนัดแข่งขันล่าสุด
         fixtures_data, error = fetch_sportmonks_data("fixtures", api_key, {
             "include": "participants;stats",
-            "per_page": 25
+            "per_page": 20
         })
 
 if error:
-    st.sidebar.error(f"เกิดข้อผิดพลาดในการโหลด API: {error}")
+    st.sidebar.error(f"เกิดข้อผิดพลาด: {error}")
     st.stop()
 
 if not fixtures_data:
-    st.sidebar.warning("ไม่พบรายการแข่งขันในขณะนี้")
+    st.sidebar.warning("ไม่พบข้อมูลการแข่งขันในระบบขณะนี้")
     st.stop()
 
-# แปลง Fixtures เป็นโครงสร้าง Dropdown
+# แปลง Fixtures เป็นโครงสร้าง Dropdown ให้เลือกง่ายๆ
 fixture_options = {}
 for fix in fixtures_data:
     participants = fix.get("participants", [])
@@ -161,9 +157,9 @@ for fix in fixtures_data:
 selected_match_name = st.sidebar.selectbox("เลือกคู่แข่งขัน:", list(fixture_options.keys()))
 selected_match = fixture_options[selected_match_name]
 
-# ดึงค่า xG จาก API ( fallback ค่า default เป็น 1.45 vs 1.15 กรณีเกมยังไม่เริ่ม )
+# สกัดค่า xG จาก Match Stats
 stats = selected_match["raw"].get("stats", [])
-home_xg_default = 1.45
+home_xg_default = 1.55
 away_xg_default = 1.15
 
 for stat in stats:
@@ -180,12 +176,12 @@ for stat in stats:
 col_info1, col_info2 = st.columns([1, 1])
 
 with col_info1:
-    st.subheader("🏟️ ข้อมูลคู่แข่งขัน")
-    st.markdown(f"**การแข่งขัน:** `{selected_match_name}`")
-    st.markdown(f"**สถานะ:** {selected_match['raw'].get('result_info', 'Upcoming Match')}")
+    st.subheader("🏟️ ข้อมูลแมตช์")
+    st.markdown(f"**แมตช์ที่เลือก:** `{selected_match_name}`")
+    st.markdown(f"**สถานะ:** {selected_match['raw'].get('result_info', 'Scheduled / Upcoming')}")
 
 with col_info2:
-    st.subheader("📊 ปรับแต่งค่า Expected Goals (xG)")
+    st.subheader("📊 ค่า Expected Goals (xG)")
     c_xg1, c_xg2 = st.columns(2)
     with c_xg1:
         home_xg = st.number_input(f"xG {selected_match['home']}:", min_value=0.1, max_value=6.0, value=home_xg_default, step=0.05)
@@ -209,7 +205,7 @@ with col_ah1:
 res = calculate_ah_outcomes(home_xg, away_xg, handicap)
 
 with col_ah2:
-    st.subheader("📈 ผลลัพธ์ความน่าจะเป็น (Probability Outcome)")
+    st.subheader("📈 ผลการวิเคราะห์ความน่าจะเป็น")
     
     m1, m2, m3 = st.columns(3)
     with m1:
@@ -227,10 +223,10 @@ with col_ah2:
 
 st.markdown("---")
 
-# --- VALUE BET / FAIR ODDS RESULT ---
+# --- VALUE BET ANALYSIS ---
 st.success(f"""
 💡 **บทวิเคราะห์ราคาน้ำยุติธรรม (Fair Odds):**
-* สำหรับทีมเหย้า **{selected_match['home']}** ในราคาต่อ **{handicap}** 
-* ค่าน้ำแบบ Decimal ที่คุ้มค่าน่าลงทุน (Fair Odds) ต้องไม่ต่ำกว่า: **`{res['fair_odds']:.2f}`**
-*(หากค่าน้ำในหน้าเว็บสูงกว่า `{res['fair_odds']:.2f}` แสดงว่าราคานี้มีความคุ้มค่าเชิงสถิติ หรือ Value Bet)*
+* ทีมเหย้า **{selected_match['home']}** ที่ราคาต่อ **{handicap}** 
+* ค่าน้ำ Decimal ยุติธรรมที่ควรได้คือ: **`{res['fair_odds']:.2f}`**
+*(หากเว็บเปิดราคาค่าน้ำสูงกว่า `{res['fair_odds']:.2f}` แสดงว่าเป็นตัวเลือกที่มี Value ในการลงทุน)*
 """)
