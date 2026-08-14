@@ -1,56 +1,19 @@
 import streamlit as st
 import requests
 import math
+from datetime import datetime
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Global Football & Value Bet Predictor", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Global Football Daily Analytics", page_icon="⚽", layout="wide")
 
-st.title("⚽ Global Football & Value Bet Predictor")
-st.caption("ดึงข้อมูลแมตช์ทุกลีกฮอตทั่วโลก คำนวณ xG + Poisson พร้อมสรุปคำแนะนำ (ฝั่งน่าต่อ/รอง & สูง/ต่ำ)")
+st.title("⚽ Global Football Daily Analytics & Value Bet Predictor")
+st.caption("เลือกรอบวันแข่งขันเพื่อดูโปรแกรมฟุตบอลทุกลีกทั่วโลก พร้อมวิเคราะห์ xG และสรุปฟันธงการลงทุน")
 
-# --- 1. FUNCTION รายชื่อ "ลีกฮอต" + ดึงทุกลีกเสริม ---
-@st.cache_data(ttl=3600)
-def get_all_soccer_sports(api_key):
-    """ รายชื่อลีกฮอต + ดึงทุกลีกเสริมจาก API """
-    hot_leagues = [
-        {"title": "🔥 ไทยลีก (Thai League 1)", "key": "soccer_thailand_league1"},
-        {"title": "🔥 พรีเมียร์ลีก (English Premier League)", "key": "soccer_epl"},
-        {"title": "🔥 เซเรียอา (Italian Serie A)", "key": "soccer_italy_serie_a"},
-        {"title": "🔥 ลาลีกา (Spanish La Liga)", "key": "soccer_spain_la_liga"},
-        {"title": "🔥 บุนเดสลีกา (German Bundesliga)", "key": "soccer_germany_bundesliga"},
-        {"title": "🔥 ลีกเอิง ฝรั่งเศส (French Ligue 1)", "key": "soccer_france_ligue_one"},
-        {"title": "🔥 ฟุตบอล ยูโร (UEFA European Championship)", "key": "soccer_uefa_european_championship"},
-        {"title": "🔥 ยูฟ่าแชมเปียนส์ลีก (UEFA Champions League)", "key": "soccer_uefa_champs_league"},
-        {"title": "🔥 ยูฟ่ายูโรปาลีก (UEFA Europa League)", "key": "soccer_uefa_europa_league"},
-        {"title": "🔥 ฟุตบอลชิงแชมป์สโมสรโลก (FIFA Club World Cup)", "key": "soccer_fifa_club_world_cup"},
-        {"title": "🔥 EFLแชมเปียนชิป (English Championship)", "key": "soccer_efl_champ"},
-        {"title": "🔥 บุนเดสลีก้า 2 (German Bundesliga 2)", "key": "soccer_germany_bundesliga2"},
-        {"title": "🔥 ลีกเดอช (French Ligue 2)", "key": "soccer_france_ligue_two"},
-    ]
-    
-    url = "https://api.the-odds-api.com/v4/sports"
-    params = {"apiKey": api_key}
-    
-    try:
-        res = requests.get(url, params=params, timeout=10)
-        if res.status_code == 200:
-            api_leagues = [s for s in res.json() if s.get("group") == "Soccer"]
-            hot_keys = {hl["key"] for hl in hot_leagues}
-            for al in api_leagues:
-                if al.get("key") not in hot_keys:
-                    hot_leagues.append({
-                        "title": f"🌐 {al.get('title')}",
-                        "key": al.get("key")
-                    })
-    except Exception:
-        pass
-
-    return hot_leagues
-
-@st.cache_data(ttl=600)
-def fetch_odds_for_league(api_key, sport_key):
-    """ ดึงตารางแข่ง, ค่าน้ำ Asian Handicap (spreads) และ สูง/ต่ำ (totals) """
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
+# --- 1. FUNCTION ดึงข้อมูลโปรแกรมแข่งขันและค่าน้ำทุกลีกทั่วโลก ---
+@st.cache_data(ttl=900)  # Refresh ทุก 15 นาที
+def fetch_all_global_odds(api_key):
+    """ ดึงตารางแข่งสด/ล่วงหน้าของกีฬาฟุตบอลทั่วโลก """
+    url = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
     params = {
         "apiKey": api_key,
         "regions": "eu,uk",
@@ -58,11 +21,13 @@ def fetch_odds_for_league(api_key, sport_key):
         "oddsFormat": "decimal"
     }
     try:
-        res = requests.get(url, params=params, timeout=12)
+        res = requests.get(url, params=params, timeout=15)
         res.raise_for_status()
-        return res.json()
-    except Exception:
-        return []
+        return res.json(), None
+    except requests.exceptions.HTTPError as err:
+        return None, f"HTTP Error {err.response.status_code}: โปรดตรวจสอบ API Key"
+    except Exception as e:
+        return None, f"Connection Error: {str(e)}"
 
 # --- 2. MATH & PROBABILITY CALCULATIONS ---
 def poisson_pmf(k, lambda_val):
@@ -110,7 +75,7 @@ def calculate_analytics(home_xg, away_xg, handicap, target_total=2.5, max_goals=
     }
 
 # --- 3. UI DASHBOARD ---
-st.sidebar.header("⚙️ ตั้งค่าระบบ")
+st.sidebar.header("⚙️ ตั้งค่าระบบ & เลือกโปรแกรมแข่ง")
 
 api_key = st.secrets.get("ODDS_API_KEY") if "ODDS_API_KEY" in st.secrets else st.sidebar.text_input("🔑 ใส่ Odds API Key:", type="password")
 
@@ -118,31 +83,60 @@ if not api_key:
     st.info("👈 กรุณากรอก **Odds API Key** ในแถบเมนูด้านซ้ายเพื่อเริ่มใช้งาน")
     st.stop()
 
-all_leagues = get_all_soccer_sports(api_key)
+with st.spinner("🤖 กำลังดึงโปรแกรมการแข่งขันและราคาน้ำทุกลีกทั่วโลก..."):
+    raw_matches, error = fetch_all_global_odds(api_key)
 
-if not all_leagues:
-    st.error("ไม่สามารถดึงข้อมูลลีกได้ โปรดตรวจสอบ API Key")
+if error:
+    st.error(f"เกิดข้อผิดพลาด: {error}")
     st.stop()
 
-league_dict = {l['title']: l['key'] for l in all_leagues}
-selected_league_label = st.sidebar.selectbox("เลือกลีกฮอต / ลีกที่ต้องการ:", list(league_dict.keys()))
-selected_sport_key = league_dict[selected_league_label]
-
-with st.spinner(f"กำลังดึงตารางแข่งและราคาบอลของ {selected_league_label}..."):
-    matches = fetch_odds_for_league(api_key, selected_sport_key)
-
-if not matches:
-    st.warning(f"ไม่พบแมตช์สด/โปรแกรมล่วงหน้าในลีก {selected_league_label} ขณะนี้")
+if not raw_matches:
+    st.warning("ไม่พบรายการแข่งขันฟุตบอลในระบบขณะนี้")
     st.stop()
 
-match_dict = {f"{m['home_team']} vs {m['away_team']}": m for m in matches}
-selected_match_label = st.sidebar.selectbox("เลือกคู่แข่งขันสด:", list(match_dict.keys()))
-selected_match = match_dict[selected_match_label]
+# --- จัดกลุ่มแมตช์ตามวันที่ (Group By Date) ---
+matches_by_date = {}
+
+for m in raw_matches:
+    commence_str = m.get("commence_time") # ISO Format e.g., "2026-08-14T15:00:00Z"
+    if commence_str:
+        dt = datetime.strptime(commence_str[:19], "%Y-%m-%dT%H:%M:%S")
+        date_key = dt.strftime("%Y-%m-%d") # ตัวอย่าง "2026-08-14"
+        time_str = dt.strftime("%H:%M")   # ตัวอย่าง "15:00"
+    else:
+        date_key = "ไม่ระบุวัน"
+        time_str = "--:--"
+        
+    m["time_formatted"] = time_str
+    
+    if date_key not in matches_by_date:
+        matches_by_date[date_key] = []
+    matches_by_date[date_key].append(m)
+
+# 1. Dropdown เลือกวันที่แข่งขัน
+sorted_dates = sorted(list(matches_by_date.keys()))
+selected_date = st.sidebar.selectbox("📅 เลือกวันที่แข่งขัน:", sorted_dates)
+
+# 2. Dropdown เลือกคู่บอลในวันที่เลือก (รวมทุกลีกทั่วโลก)
+matches_on_selected_date = matches_by_date[selected_date]
+
+match_options = {}
+for m in matches_on_selected_date:
+    league_name = m.get("sport_title", "Football")
+    home = m.get("home_team", "Home")
+    away = m.get("away_team", "Away")
+    time_str = m.get("time_formatted", "")
+    
+    label = f"[{time_str}] [{league_name}] {home} vs {away}"
+    match_options[label] = m
+
+selected_match_label = st.sidebar.selectbox(f"⚽ เลือกคู่แข่งขัน ({len(matches_on_selected_date)} คู่):", list(match_options.keys()))
+selected_match = match_options[selected_match_label]
 
 home_team = selected_match["home_team"]
 away_team = selected_match["away_team"]
 
-# สกัดค่าน้ำ/ราคาต่อรองสด
+# สกัดค่าน้ำ/ราคาต่อรองสดจาก Bookmakers
 live_handicap = -0.5
 live_odds_ah = 0.0
 live_total_point = 2.5
@@ -166,10 +160,10 @@ if bookmakers:
                 elif out.get("name") == "Under":
                     live_odds_under = float(out.get("price", 0.0))
 
-# --- DISPLAY MATCH DATA ---
+# --- DISPLAY MATCH DETAILS ---
 st.markdown("---")
 st.subheader(f"🏟️ {home_team} vs {away_team}")
-st.caption(f"🏆 ลีก: {selected_league_label} | เวลาแข่ง: {selected_match.get('commence_time')[:16].replace('T', ' ')}")
+st.caption(f"📅 วันที่เตะ: {selected_date} | เวลา: {selected_match.get('time_formatted')} น. | 🏆 ลีก: {selected_match.get('sport_title')}")
 
 col_xg1, col_xg2 = st.columns(2)
 with col_xg1:
@@ -224,14 +218,14 @@ else:
 col_rec1, col_rec2 = st.columns(2)
 
 with col_rec1:
-    st.markdown(f"### 🛡️ ฝั่งต่อ/รอง (Asian Handicap)")
+    st.markdown("### 🛡️ ฝั่งต่อ/รอง (Asian Handicap)")
     if "🟢" in ah_status:
         st.success(f"{ah_status}\n\n👉 {ah_action}\n\n*ค่าน้ำที่คุ้มเสี่ยง (Fair Odds):* `{res['fair_odds_ah']:.2f}` ขึ้นไป")
     else:
         st.error(f"{ah_status}\n\n👉 {ah_action}")
 
 with col_rec2:
-    st.markdown(f"### ⚽ ฝั่งสกอร์สูง/ต่ำ (Over/Under)")
+    st.markdown("### ⚽ ฝั่งสกอร์สูง/ต่ำ (Over/Under)")
     if "🟢" in ou_status:
         st.success(f"{ou_status}\n\n👉 {ou_action}\n\n*ค่าน้ำที่คุ้มเสี่ยง:* Over `{res['fair_odds_over']:.2f}` | Under `{res['fair_odds_under']:.2f}`")
     else:
